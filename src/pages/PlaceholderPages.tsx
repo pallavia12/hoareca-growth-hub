@@ -5,8 +5,6 @@ const PlaceholderPage = ({ title }: { title: string }) => (
   </div>
 );
 
-export const ProspectsPage = () => <PlaceholderPage title="Step 1: Prospect Building" />;
-export const LeadsPage = () => <PlaceholderPage title="Step 2: Lead Generation" />;
 export const SampleOrdersPage = () => <PlaceholderPage title="Step 3: Visit to Sample Order" />;
 export const AgreementsPage = () => <PlaceholderPage title="Step 4: Sample Order to Agreement" />;
 export const AnalyticsPage = () => <PlaceholderPage title="Analytics Dashboard" />;

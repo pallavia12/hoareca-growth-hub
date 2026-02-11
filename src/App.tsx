@@ -8,9 +8,9 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
+import ProspectsPage from "./pages/ProspectsPage";
+import LeadsPage from "./pages/LeadsPage";
 import {
-  ProspectsPage,
-  LeadsPage,
   SampleOrdersPage,
   AgreementsPage,
   AnalyticsPage,
