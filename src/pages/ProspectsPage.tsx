@@ -56,6 +56,7 @@ export default function ProspectsPage() {
   const [search, setSearch] = useState("");
   const [filterPincode, setFilterPincode] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [filterTag, setFilterTag] = useState("");
   const [sortField, setSortField] = useState<"restaurant_name" | "pincode" | "created_at">("created_at");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [selected, setSelected] = useState<string[]>([]);
@@ -75,13 +76,16 @@ export default function ProspectsPage() {
 
   const filters: ProspectFilters = { search, pincode: filterPincode, locality: "", status: filterStatus, tab };
   const filtered = useMemo(() => {
-    const list = filterProspects(filters);
+    let list = filterProspects(filters);
+    if (filterTag && filterTag !== "all") {
+      list = list.filter(p => p.tag === filterTag);
+    }
     return list.sort((a, b) => {
       const aVal = a[sortField] || "";
       const bVal = b[sortField] || "";
       return sortDir === "asc" ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal));
     });
-  }, [prospects, filters, sortField, sortDir]);
+  }, [prospects, filters, sortField, sortDir, filterTag]);
 
   const pincodes = useMemo(() => [...new Set(prospects.map(p => p.pincode))].sort(), [prospects]);
 
@@ -92,9 +96,15 @@ export default function ProspectsPage() {
   }), [prospects]);
 
   const handleAdd = async () => {
-    if (!form.pincode || !form.restaurant_name || !form.location || !form.locality) return;
+    if (!form.pincode || !form.restaurant_name || !form.locality) return;
     const ok = await addProspect({
-      ...form,
+      pincode: form.pincode,
+      locality: form.locality,
+      restaurant_name: form.restaurant_name,
+      location: form.location || null,
+      mapped_to: form.mapped_to || null,
+      source: form.source || null,
+      cuisine_type: form.cuisine_type || null,
       recall_date: form.recall_date || null,
       tag: form.tag || null,
       created_by: user?.email || null,
@@ -181,11 +191,11 @@ export default function ProspectsPage() {
                   <Input placeholder="The Avocado Café" value={form.restaurant_name} onChange={e => setForm(f => ({ ...f, restaurant_name: e.target.value }))} />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Location *</Label>
+                  <Label className="text-xs">Location</Label>
                   <Input placeholder="Raj Villa, Koramangala, Bangalore" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Assigned KAM / Lead Generator *</Label>
+                  <Label className="text-xs">Assigned KAM / Lead Generator</Label>
                   <Input placeholder="kam@ninjacart.com" value={form.mapped_to} onChange={e => setForm(f => ({ ...f, mapped_to: e.target.value }))} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -230,7 +240,7 @@ export default function ProspectsPage() {
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-                <Button size="sm" onClick={handleAdd} disabled={!form.pincode || !form.restaurant_name || !form.location || !form.locality}>
+                <Button size="sm" onClick={handleAdd} disabled={!form.pincode || !form.restaurant_name || !form.locality}>
                   Save Prospect
                 </Button>
               </DialogFooter>
@@ -261,6 +271,15 @@ export default function ProspectsPage() {
               {pincodes.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
             </SelectContent>
           </Select>
+          {isAssignedTab && (
+            <Select value={filterTag} onValueChange={setFilterTag}>
+              <SelectTrigger className="w-full sm:w-[160px] h-9 text-xs"><SelectValue placeholder="All Tags" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Tags</SelectItem>
+                {tagOptions.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
           {selected.length > 0 && (
             <div className="flex gap-1">
               <Button size="sm" variant="outline" className="text-xs h-9" onClick={() => handleBulkStatus("assigned")}>

@@ -132,8 +132,8 @@ export default function LeadsPage() {
     client_name: form.client_name,
     pincode: form.pincode,
     locality: form.locality || null,
-    outlet_address: form.outlet_address,
-    contact_number: form.contact_number,
+    outlet_address: form.outlet_address || null,
+    contact_number: form.contact_number || null,
     gst_id: form.gst_id || null,
     avocado_consumption: form.avocado_consumption || null,
     avocado_variety: form.avocado_variety || null,
@@ -142,7 +142,7 @@ export default function LeadsPage() {
     franchised: form.franchised,
     current_supplier: form.current_supplier || null,
     estimated_monthly_spend: form.estimated_monthly_spend ? Number(form.estimated_monthly_spend) : null,
-    remarks: form.remarks,
+    remarks: form.remarks || null,
     appointment_date: form.appointment_date || null,
     appointment_time: form.appointment_time || null,
     prospect_id: selectedProspect || null,
@@ -151,7 +151,7 @@ export default function LeadsPage() {
   });
 
   const handleAddLead = async () => {
-    if (!form.client_name || !form.pincode || !form.outlet_address || !form.contact_number || !form.remarks) return;
+    if (!form.client_name || !form.pincode) return;
     const ok = await addLead(buildLeadPayload("new"));
     if (ok) {
       toast({ title: "Lead saved successfully", className: "bg-success text-success-foreground" });
@@ -214,7 +214,7 @@ export default function LeadsPage() {
     else { setSortBy(field); setSortDir("desc"); }
   };
 
-  const isFormValid = form.client_name && form.pincode && form.outlet_address && form.contact_number && form.remarks;
+  const isFormValid = form.client_name && form.pincode;
 
   // Lead form UI (shared between import and fresh modes)
   const renderLeadForm = () => (
@@ -369,6 +369,18 @@ export default function LeadsPage() {
             <SelectContent>
               <SelectItem value="all">All Pincodes</SelectItem>
               {pincodes.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="w-full sm:w-[140px] h-9 text-xs"><SelectValue placeholder="All Statuses" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="new">New</SelectItem>
+              <SelectItem value="in_progress">In Progress</SelectItem>
+              <SelectItem value="qualified">Qualified</SelectItem>
+              <SelectItem value="rescheduled">Rescheduled</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="incomplete">Incomplete</SelectItem>
             </SelectContent>
           </Select>
           <div className="flex gap-1">

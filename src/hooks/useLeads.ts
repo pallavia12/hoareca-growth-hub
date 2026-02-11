@@ -64,8 +64,8 @@ export function useLeads() {
         const s = filters.search.toLowerCase();
         if (!l.client_name.toLowerCase().includes(s) && !(l.locality || "").toLowerCase().includes(s) && !l.pincode.includes(s)) return false;
       }
-      if (filters.pincode && l.pincode !== filters.pincode) return false;
-      if (filters.status && l.status !== filters.status) return false;
+      if (filters.pincode && filters.pincode !== "all" && l.pincode !== filters.pincode) return false;
+      if (filters.status && filters.status !== "all" && l.status !== filters.status) return false;
 
       if (filters.tab === "fresh") return (l.call_count || 0) === 0 && (l.visit_count || 0) === 0;
       if (filters.tab === "revisit") return (l.call_count || 0) > 0 || (l.visit_count || 0) > 0;
