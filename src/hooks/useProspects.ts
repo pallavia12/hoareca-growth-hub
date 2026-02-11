@@ -46,6 +46,20 @@ export function useProspects() {
     return true;
   };
 
+  const updateProspect = async (id: string, updates: Partial<Prospect>) => {
+    const { error } = await supabase
+      .from("prospects")
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) {
+      toast({ title: "Error updating prospect", description: error.message, variant: "destructive" });
+      return false;
+    }
+    toast({ title: "Prospect updated" });
+    fetchProspects();
+    return true;
+  };
+
   const updateProspectStatus = async (ids: string[], status: string) => {
     const { error } = await supabase
       .from("prospects")
@@ -66,7 +80,7 @@ export function useProspects() {
         const s = filters.search.toLowerCase();
         if (!p.restaurant_name.toLowerCase().includes(s) && !p.locality.toLowerCase().includes(s) && !p.pincode.includes(s)) return false;
       }
-      if (filters.pincode && p.pincode !== filters.pincode) return false;
+      if (filters.pincode && filters.pincode !== "all" && p.pincode !== filters.pincode) return false;
       if (filters.locality && p.locality !== filters.locality) return false;
       if (filters.status && p.status !== filters.status) return false;
 
@@ -77,5 +91,5 @@ export function useProspects() {
     });
   };
 
-  return { prospects, loading, addProspect, updateProspectStatus, filterProspects, refetch: fetchProspects };
+  return { prospects, loading, addProspect, updateProspect, updateProspectStatus, filterProspects, refetch: fetchProspects };
 }

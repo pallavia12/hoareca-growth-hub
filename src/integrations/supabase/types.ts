@@ -485,9 +485,11 @@ export type Database = {
           location: string | null
           mapped_to: string | null
           pincode: string
+          recall_date: string | null
           restaurant_name: string
           source: string | null
           status: string
+          tag: string | null
           updated_at: string
         }
         Insert: {
@@ -501,9 +503,11 @@ export type Database = {
           location?: string | null
           mapped_to?: string | null
           pincode: string
+          recall_date?: string | null
           restaurant_name: string
           source?: string | null
           status?: string
+          tag?: string | null
           updated_at?: string
         }
         Update: {
@@ -517,9 +521,11 @@ export type Database = {
           location?: string | null
           mapped_to?: string | null
           pincode?: string
+          recall_date?: string | null
           restaurant_name?: string
           source?: string | null
           status?: string
+          tag?: string | null
           updated_at?: string
         }
         Relationships: []

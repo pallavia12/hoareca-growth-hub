@@ -12,15 +12,23 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
+import { Calendar } from "@/components/ui/calendar";
 import { useProspects, type ProspectFilters } from "@/hooks/useProspects";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  Plus, Search, Upload, Filter, MapPin, ArrowUpDown, RefreshCw, RotateCcw, CheckSquare,
+  Plus, Search, Upload, ArrowUpDown, RotateCcw, CheckSquare, MoreHorizontal, Tag, CalendarIcon,
 } from "lucide-react";
 import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 
 const statusColors: Record<string, string> = {
   available: "bg-success/10 text-success border-success/20",
@@ -29,11 +37,20 @@ const statusColors: Record<string, string> = {
   dropped: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
+const tagColors: Record<string, string> = {
+  "Needs Re-call": "bg-warning/10 text-warning border-warning/20",
+  "Partial Info": "bg-info/10 text-info border-info/20",
+  "No Response": "bg-muted text-muted-foreground border-border",
+  "Positive Response": "bg-success/10 text-success border-success/20",
+  "Not Interested": "bg-destructive/10 text-destructive border-destructive/20",
+};
+
+const tagOptions = ["Needs Re-call", "Partial Info", "No Response", "Positive Response", "Not Interested"];
 const cuisineTypes = ["Indian", "Continental", "Pan-Asian", "Cafe", "Cloud Kitchen", "Multi-cuisine"];
 const sourceTypes = ["Google Maps", "Swiggy", "Zomato", "Event", "Referral", "Field"];
 
 export default function ProspectsPage() {
-  const { prospects, loading, addProspect, updateProspectStatus, filterProspects } = useProspects();
+  const { prospects, loading, addProspect, updateProspect, updateProspectStatus, filterProspects } = useProspects();
   const { user } = useAuth();
   const [tab, setTab] = useState<"fresh" | "revisit" | "dropped">("fresh");
   const [search, setSearch] = useState("");
@@ -44,10 +61,16 @@ export default function ProspectsPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [addOpen, setAddOpen] = useState(false);
 
+  // Inline action state
+  const [actionRow, setActionRow] = useState<string | null>(null);
+  const [actionType, setActionType] = useState<"tag" | "recall" | null>(null);
+  const [selectedTag, setSelectedTag] = useState("");
+  const [recallDate, setRecallDate] = useState<Date | undefined>();
+
   // Add form state
   const [form, setForm] = useState({
     pincode: "", locality: "", restaurant_name: "", location: "",
-    mapped_to: "", source: "", cuisine_type: "",
+    mapped_to: "", source: "", cuisine_type: "", tag: "", recall_date: "",
   });
 
   const filters: ProspectFilters = { search, pincode: filterPincode, locality: "", status: filterStatus, tab };
@@ -72,11 +95,13 @@ export default function ProspectsPage() {
     if (!form.pincode || !form.restaurant_name || !form.location || !form.locality) return;
     const ok = await addProspect({
       ...form,
+      recall_date: form.recall_date || null,
+      tag: form.tag || null,
       created_by: user?.email || null,
       status: "available",
     });
     if (ok) {
-      setForm({ pincode: "", locality: "", restaurant_name: "", location: "", mapped_to: "", source: "", cuisine_type: "" });
+      setForm({ pincode: "", locality: "", restaurant_name: "", location: "", mapped_to: "", source: "", cuisine_type: "", tag: "", recall_date: "" });
       setAddOpen(false);
     }
   };
@@ -100,6 +125,30 @@ export default function ProspectsPage() {
     if (sortField === field) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortField(field); setSortDir("asc"); }
   };
+
+  const openAction = (id: string, type: "tag" | "recall") => {
+    setActionRow(id);
+    setActionType(type);
+    const p = prospects.find(pr => pr.id === id);
+    if (type === "tag") setSelectedTag(p?.tag || "");
+    if (type === "recall") setRecallDate(p?.recall_date ? new Date(p.recall_date) : undefined);
+  };
+
+  const handleSaveTag = async () => {
+    if (!actionRow) return;
+    await updateProspect(actionRow, { tag: selectedTag || null });
+    setActionRow(null);
+    setActionType(null);
+  };
+
+  const handleSaveRecall = async () => {
+    if (!actionRow || !recallDate) return;
+    await updateProspect(actionRow, { recall_date: format(recallDate, "yyyy-MM-dd") });
+    setActionRow(null);
+    setActionType(null);
+  };
+
+  const isAssignedTab = tab === "revisit";
 
   return (
     <div className="space-y-4">
@@ -155,6 +204,29 @@ export default function ProspectsPage() {
                     </Select>
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Tag</Label>
+                    <Select value={form.tag} onValueChange={v => setForm(f => ({ ...f, tag: v }))}>
+                      <SelectTrigger><SelectValue placeholder="Select tag" /></SelectTrigger>
+                      <SelectContent>{tagOptions.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Re-call Date</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className={cn("w-full justify-start text-left font-normal text-xs h-9", !form.recall_date && "text-muted-foreground")}>
+                          <CalendarIcon className="w-3 h-3 mr-1" />
+                          {form.recall_date ? format(new Date(form.recall_date), "dd MMM yyyy") : "Pick date"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar mode="single" selected={form.recall_date ? new Date(form.recall_date) : undefined} onSelect={d => setForm(f => ({ ...f, recall_date: d ? format(d, "yyyy-MM-dd") : "" }))} initialFocus className="p-3 pointer-events-auto" />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
@@ -201,7 +273,7 @@ export default function ProspectsPage() {
           )}
         </div>
 
-        {/* Table for all tabs */}
+        {/* Table */}
         <TabsContent value={tab} className="mt-3">
           <Card>
             <CardContent className="p-0">
@@ -224,12 +296,15 @@ export default function ProspectsPage() {
                           <span className="flex items-center gap-1 text-xs">Pincode <ArrowUpDown className="w-3 h-3" /></span>
                         </TableHead>
                         <TableHead className="text-xs hidden md:table-cell">Locality</TableHead>
+                        {isAssignedTab && <TableHead className="text-xs">Assigned To</TableHead>}
+                        {isAssignedTab && <TableHead className="text-xs">Tag</TableHead>}
+                        {isAssignedTab && <TableHead className="text-xs hidden md:table-cell">Re-call Date</TableHead>}
                         <TableHead className="text-xs hidden lg:table-cell">Source</TableHead>
-                        <TableHead className="text-xs hidden lg:table-cell">Cuisine</TableHead>
                         <TableHead className="text-xs">Status</TableHead>
                         <TableHead className="text-xs hidden md:table-cell cursor-pointer" onClick={() => toggleSort("created_at")}>
                           <span className="flex items-center gap-1">Date <ArrowUpDown className="w-3 h-3" /></span>
                         </TableHead>
+                        {isAssignedTab && <TableHead className="text-xs w-10">Action</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -239,8 +314,20 @@ export default function ProspectsPage() {
                           <TableCell className="font-medium max-w-[200px] truncate">{p.restaurant_name}</TableCell>
                           <TableCell className="font-mono text-xs">{p.pincode}</TableCell>
                           <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{p.locality}</TableCell>
+                          {isAssignedTab && <TableCell className="text-xs">{p.mapped_to || "—"}</TableCell>}
+                          {isAssignedTab && (
+                            <TableCell>
+                              {p.tag ? (
+                                <Badge variant="outline" className={`text-[10px] ${tagColors[p.tag] || ""}`}>{p.tag}</Badge>
+                              ) : <span className="text-xs text-muted-foreground">—</span>}
+                            </TableCell>
+                          )}
+                          {isAssignedTab && (
+                            <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
+                              {p.recall_date ? format(new Date(p.recall_date), "dd MMM yyyy") : "—"}
+                            </TableCell>
+                          )}
                           <TableCell className="hidden lg:table-cell text-xs">{p.source || "—"}</TableCell>
-                          <TableCell className="hidden lg:table-cell text-xs">{p.cuisine_type || "—"}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className={`text-[10px] ${statusColors[p.status] || ""}`}>
                               {p.status}
@@ -249,6 +336,25 @@ export default function ProspectsPage() {
                           <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
                             {format(new Date(p.created_at), "dd MMM")}
                           </TableCell>
+                          {isAssignedTab && (
+                            <TableCell>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                                    <MoreHorizontal className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => openAction(p.id, "tag")}>
+                                    <Tag className="w-3 h-3 mr-2" /> Tag Prospect
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => openAction(p.id, "recall")}>
+                                    <CalendarIcon className="w-3 h-3 mr-2" /> Schedule Re-call
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -259,6 +365,46 @@ export default function ProspectsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Tag Modal */}
+      <Dialog open={actionType === "tag"} onOpenChange={open => { if (!open) { setActionType(null); setActionRow(null); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle className="text-base">Tag Prospect</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <Label className="text-xs">Select Tag</Label>
+            <div className="flex flex-wrap gap-2">
+              {tagOptions.map(t => (
+                <Badge
+                  key={t}
+                  variant="outline"
+                  className={cn("cursor-pointer text-xs px-3 py-1.5 transition-colors", selectedTag === t ? tagColors[t] : "hover:bg-muted")}
+                  onClick={() => setSelectedTag(t)}
+                >
+                  {t}
+                </Badge>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+            <Button size="sm" onClick={handleSaveTag} disabled={!selectedTag}>Save Tag</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Re-call Date Modal */}
+      <Dialog open={actionType === "recall"} onOpenChange={open => { if (!open) { setActionType(null); setActionRow(null); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle className="text-base">Schedule Re-call Date</DialogTitle></DialogHeader>
+          <div className="flex justify-center">
+            <Calendar mode="single" selected={recallDate} onSelect={setRecallDate} initialFocus className="p-3 pointer-events-auto" />
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+            <Button size="sm" onClick={handleSaveRecall} disabled={!recallDate}>Save Date</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
