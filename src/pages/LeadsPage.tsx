@@ -304,8 +304,10 @@ export default function LeadsPage() {
           </div>
         </div>
 
-        {/* Map Pin Picker instead of text address */}
-        <MapPinPicker lat={pinLat} lng={pinLng} onLocationSelect={(lat, lng) => { setPinLat(lat); setPinLng(lng); }} />
+        {/* Map Pin Picker instead of text address - only render when dialog is open to avoid react-leaflet crash */}
+        {(createLeadOpen || addNewLeadOpen) && (
+          <MapPinPicker lat={pinLat} lng={pinLng} onLocationSelect={(lat, lng) => { setPinLat(lat); setPinLng(lng); }} />
+        )}
 
         <div className="space-y-1">
           <Label className="text-xs">GST ID</Label>
