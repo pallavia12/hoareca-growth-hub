@@ -40,7 +40,7 @@ const tagColors: Record<string, string> = {
 };
 
 export default function LeadsPage() {
-  const { leads, loading: leadsLoading, addLead, refetch: refetchLeads } = useLeads();
+  const { leads, loading: leadsLoading, addLead, updateLead, refetch: refetchLeads } = useLeads();
   const { prospects, loading: prospectsLoading, updateProspect } = useProspects();
   const { user, userRole } = useAuth();
   const { toast } = useToast();
@@ -133,6 +133,11 @@ export default function LeadsPage() {
     dropouts: myProspects.filter(p => p.tag === "Dropped").length,
   }), [myProspects]);
 
+  // Helper: get the lead associated with a prospect to read call/visit counts
+  const getLeadForProspect = (prospectId: string) => {
+    return leads.find(l => l.prospect_id === prospectId);
+  };
+
   const openCreateLead = (prospectId: string) => {
     const p = prospects.find(pr => pr.id === prospectId);
     resetForm();
@@ -155,14 +160,19 @@ export default function LeadsPage() {
     setAddNewLeadOpen(true);
   };
 
-  const incrementCount = () => {
-    if (userRole === "calling_agent") return { call_count: 1 };
-    return { visit_count: 1 };
+  const getIncrementField = () => {
+    if (userRole === "calling_agent") return "call_count";
+    return "visit_count";
   };
 
   const handleSaveLead = async () => {
     if (!form.client_name || !form.pincode) return;
-    const counts = incrementCount();
+    const field = getIncrementField();
+
+    // Check if there's an existing lead for this prospect to increment
+    const existingLead = createLeadProspectId ? getLeadForProspect(createLeadProspectId) : null;
+    const currentCount = existingLead ? ((existingLead as any)[field] || 0) : 0;
+
     const ok = await addLead({
       client_name: form.client_name,
       pincode: form.pincode,
@@ -183,11 +193,10 @@ export default function LeadsPage() {
       prospect_id: createLeadProspectId || null,
       created_by: user?.email || null,
       status: "qualified",
-      call_count: counts.call_count || 0,
-      visit_count: counts.visit_count || 0,
+      call_count: field === "call_count" ? currentCount + 1 : (existingLead?.call_count || 0),
+      visit_count: field === "visit_count" ? currentCount + 1 : (existingLead?.visit_count || 0),
     });
     if (ok) {
-      // Update prospect tag to Qualified
       if (createLeadProspectId) {
         await updateProspect(createLeadProspectId, { tag: "Qualified" });
       }
@@ -201,7 +210,10 @@ export default function LeadsPage() {
 
   const handleSaveIncomplete = async () => {
     if (!form.client_name || !form.pincode) return;
-    const counts = incrementCount();
+    const field = getIncrementField();
+    const existingLead = createLeadProspectId ? getLeadForProspect(createLeadProspectId) : null;
+    const currentCount = existingLead ? ((existingLead as any)[field] || 0) : 0;
+
     const remarksSuffix = revisitDate ? `\n[Re-visit: ${format(revisitDate, "dd MMM yyyy")}${revisitTime ? " " + revisitTime : ""}]` : "";
     const ok = await addLead({
       client_name: form.client_name,
@@ -223,8 +235,8 @@ export default function LeadsPage() {
       prospect_id: createLeadProspectId || null,
       created_by: user?.email || null,
       status: "in_progress",
-      call_count: counts.call_count || 0,
-      visit_count: counts.visit_count || 0,
+      call_count: field === "call_count" ? currentCount + 1 : (existingLead?.call_count || 0),
+      visit_count: field === "visit_count" ? currentCount + 1 : (existingLead?.visit_count || 0),
     });
     if (ok) {
       if (createLeadProspectId) {
@@ -245,6 +257,14 @@ export default function LeadsPage() {
     if (!unsuccessfulProspectId || !unsuccessfulReason || !unsuccessfulRemarks) return;
     const isDrop = unsuccessfulReason === "Drop";
     const newTag = isDrop ? "Dropped" : "Rescheduled";
+
+    // Increment call/visit count on the associated lead
+    const existingLead = getLeadForProspect(unsuccessfulProspectId);
+    if (existingLead) {
+      const field = getIncrementField();
+      await updateLead(existingLead.id, { [field]: ((existingLead as any)[field] || 0) + 1 });
+    }
+
     await updateProspect(unsuccessfulProspectId, { tag: newTag });
     toast({ title: isDrop ? "Prospect dropped" : "Prospect rescheduled" });
     setUnsuccessfulOpen(false);
@@ -379,28 +399,55 @@ export default function LeadsPage() {
     </div>
   );
 
-  const renderProspectRow = (p: typeof prospects[0], showActions: boolean) => (
-    <TableRow key={p.id} className="text-sm">
-      <TableCell className="font-medium max-w-[180px] truncate">{p.restaurant_name}</TableCell>
-      <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
-      <TableCell className="text-xs font-mono hidden sm:table-cell">{p.pincode}</TableCell>
-      <TableCell>
-        {showActions ? (
-          <div className="flex gap-1 flex-wrap">
-            <Button size="sm" className="text-xs h-7" onClick={() => openCreateLead(p.id)}>Create Lead</Button>
-            <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => {
-              setUnsuccessfulProspectId(p.id);
-              setUnsuccessfulReason("");
-              setUnsuccessfulRemarks("");
-              setUnsuccessfulOpen(true);
-            }}>Log Unsuccessful</Button>
-          </div>
-        ) : (
-          <span className="text-xs text-muted-foreground">—</span>
+  const renderProspectRow = (p: typeof prospects[0], showActions: boolean) => {
+    const lead = getLeadForProspect(p.id);
+    const callCount = lead?.call_count || 0;
+    const visitCount = lead?.visit_count || 0;
+
+    return (
+      <TableRow key={p.id} className="text-sm">
+        <TableCell className="font-medium max-w-[180px] truncate">
+          {p.restaurant_name}
+          {(tab === "revisit" || tab === "dropouts") && (callCount > 0 || visitCount > 0) && (
+            <div className="flex gap-1 mt-0.5">
+              {callCount > 0 && (
+                <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/20">
+                  {callCount} {callCount === 1 ? "call" : "calls"}
+                </Badge>
+              )}
+              {visitCount > 0 && (
+                <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">
+                  {visitCount} {visitCount === 1 ? "visit" : "visits"}
+                </Badge>
+              )}
+            </div>
+          )}
+        </TableCell>
+        <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
+        <TableCell className="text-xs font-mono hidden sm:table-cell">{p.pincode}</TableCell>
+        {tab === "revisit" && (
+          <TableCell className="text-xs text-muted-foreground">
+            {callCount + visitCount}
+          </TableCell>
         )}
-      </TableCell>
-    </TableRow>
-  );
+        <TableCell>
+          {showActions ? (
+            <div className="flex gap-1 flex-wrap">
+              <Button size="sm" className="text-xs h-7" onClick={() => openCreateLead(p.id)}>Create Lead</Button>
+              <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => {
+                setUnsuccessfulProspectId(p.id);
+                setUnsuccessfulReason("");
+                setUnsuccessfulRemarks("");
+                setUnsuccessfulOpen(true);
+              }}>Log Unsuccessful</Button>
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          )}
+        </TableCell>
+      </TableRow>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -476,14 +523,15 @@ export default function LeadsPage() {
                       <TableHead className="text-xs">Name</TableHead>
                       <TableHead className="text-xs">Locality</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
+                      <TableHead className="text-xs">Attempts</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loading ? (
-                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                     ) : revisitProspects.length === 0 ? (
-                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No prospects in revisit queue.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No prospects in revisit queue.</TableCell></TableRow>
                     ) : (
                       revisitProspects.map(p => renderProspectRow(p, true))
                     )}
@@ -514,16 +562,37 @@ export default function LeadsPage() {
                     ) : droppedProspects.length === 0 ? (
                       <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No dropped prospects.</TableCell></TableRow>
                     ) : (
-                      droppedProspects.map(p => (
-                        <TableRow key={p.id} className="text-sm">
-                          <TableCell className="font-medium max-w-[180px] truncate">{p.restaurant_name}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
-                          <TableCell className="text-xs font-mono hidden sm:table-cell">{p.pincode}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">Dropped</Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                      droppedProspects.map(p => {
+                        const lead = getLeadForProspect(p.id);
+                        const callCount = lead?.call_count || 0;
+                        const visitCount = lead?.visit_count || 0;
+                        return (
+                          <TableRow key={p.id} className="text-sm">
+                            <TableCell className="font-medium max-w-[180px] truncate">
+                              {p.restaurant_name}
+                              {(callCount > 0 || visitCount > 0) && (
+                                <div className="flex gap-1 mt-0.5">
+                                  {callCount > 0 && (
+                                    <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/20">
+                                      {callCount} {callCount === 1 ? "call" : "calls"}
+                                    </Badge>
+                                  )}
+                                  {visitCount > 0 && (
+                                    <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">
+                                      {visitCount} {visitCount === 1 ? "visit" : "visits"}
+                                    </Badge>
+                                  )}
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
+                            <TableCell className="text-xs font-mono hidden sm:table-cell">{p.pincode}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">Dropped</Badge>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>

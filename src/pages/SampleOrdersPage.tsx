@@ -280,6 +280,14 @@ export default function SampleOrdersPage() {
         visit_date: format(new Date(), "yyyy-MM-dd"),
       });
     }
+    // Increment visit count
+    const leadId = dropLeadId || (dropOrderId ? orders.find(o => o.id === dropOrderId)?.lead_id : null);
+    if (leadId) {
+      const lead = leads.find(l => l.id === leadId);
+      if (lead) {
+        await updateLead(leadId, { visit_count: (lead.visit_count || 0) + 1 });
+      }
+    }
     toast({ title: "Marked as not interested" });
     setDropOpen(false);
     setDropLeadId(null);
@@ -470,6 +478,7 @@ export default function SampleOrdersPage() {
                     <TableRow>
                       <TableHead className="text-xs">Client Name</TableHead>
                       <TableHead className="text-xs">PM Name</TableHead>
+                      <TableHead className="text-xs">Visits</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Visit Date</TableHead>
                       <TableHead className="text-xs hidden md:table-cell">KAM</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
@@ -477,11 +486,34 @@ export default function SampleOrdersPage() {
                   </TableHeader>
                   <TableBody>
                     {revisitOrders.length === 0 ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No re-visits pending.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No re-visits pending.</TableCell></TableRow>
                     ) : (
-                      revisitOrders.map(o =>
-                        renderScheduledRow(o.lead_id, o.lead?.client_name || "Unknown", o.lead?.purchase_manager_name || null, o.visit_date, o.lead?.created_by || null, o.id)
-                      )
+                      revisitOrders.map(o => (
+                        <TableRow key={o.id} className="text-sm">
+                          <TableCell className="font-medium max-w-[180px] truncate">
+                            {o.lead?.client_name || "Unknown"}
+                            <Badge variant="outline" className="ml-1 text-[10px] bg-accent/10 text-accent border-accent/20">
+                              {o.lead?.visit_count || 0} {(o.lead?.visit_count || 0) === 1 ? "visit" : "visits"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{o.lead?.purchase_manager_name || "—"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{o.lead?.visit_count || 0}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{o.visit_date ? format(new Date(o.visit_date), "dd MMM") : "—"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{o.lead?.created_by || "—"}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-1 flex-wrap">
+                              <Button size="sm" className="text-xs h-7" onClick={() => openLogVisit(o.lead_id, o.id)}>Log Visit</Button>
+                              <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => {
+                                setDropLeadId(o.lead_id);
+                                setDropOrderId(o.id);
+                                setDropReason("");
+                                setDropRemarks("");
+                                setDropOpen(true);
+                              }}>Not Interested</Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
                     )}
                   </TableBody>
                 </Table>
@@ -499,17 +531,24 @@ export default function SampleOrdersPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs">Visits</TableHead>
                       <TableHead className="text-xs">Reason</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Date</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {droppedOrders.length === 0 ? (
-                      <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground text-sm py-8">No dropped orders.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No dropped orders.</TableCell></TableRow>
                     ) : (
                       droppedOrders.map(o => (
                         <TableRow key={o.id} className="text-sm">
-                          <TableCell className="font-medium">{o.lead?.client_name || "Unknown"}</TableCell>
+                          <TableCell className="font-medium">
+                            {o.lead?.client_name || "Unknown"}
+                            <Badge variant="outline" className="ml-1 text-[10px] bg-accent/10 text-accent border-accent/20">
+                              {o.lead?.visit_count || 0} {(o.lead?.visit_count || 0) === 1 ? "visit" : "visits"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{o.lead?.visit_count || 0}</TableCell>
                           <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{o.remarks || "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{format(new Date(o.updated_at), "dd MMM")}</TableCell>
                         </TableRow>

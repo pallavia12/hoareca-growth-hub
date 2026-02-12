@@ -345,16 +345,21 @@ export default function AgreementsPage() {
     const lead = getLeadForOrder(orderId);
     const totalVisits = lead?.visit_count || 0;
 
+    // Increment visit count
+    if (lead) {
+      await updateLead(lead.id, { visit_count: (lead.visit_count || 0) + 1 });
+    }
+
     if (dropAgreementId) {
       await updateAgreement(dropAgreementId, {
         status: "lost",
-        remarks: `[Dropped] ${dropReason}: ${dropRemarks}. Total visits: ${totalVisits}`,
+        remarks: `[Dropped] ${dropReason}: ${dropRemarks}. Total visits: ${totalVisits + 1}`,
       });
     } else {
       await addAgreement({
         sample_order_id: orderId,
         status: "lost",
-        remarks: `[Dropped] ${dropReason}: ${dropRemarks}. Total visits: ${totalVisits}`,
+        remarks: `[Dropped] ${dropReason}: ${dropRemarks}. Total visits: ${totalVisits + 1}`,
       });
     }
     toast({ title: "Marked as not interested", variant: "destructive" });
@@ -497,6 +502,7 @@ export default function AgreementsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs">Visits</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Sample Delivered</TableHead>
                       <TableHead className="text-xs hidden md:table-cell">KAM</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
@@ -504,13 +510,14 @@ export default function AgreementsPage() {
                   </TableHeader>
                   <TableBody>
                     {loading ? (
-                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                       <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                     ) : pendingItems.length === 0 ? (
-                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No sample orders pending quality feedback.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No sample orders pending quality feedback.</TableCell></TableRow>
                     ) : (
                       pendingItems.map(item => (
                         <TableRow key={item.orderId} className="text-sm">
                           <TableCell className="font-medium max-w-[180px] truncate">{item.clientName}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{item.lead?.visit_count || 0}</TableCell>
                           <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">
                             {item.deliveredDate ? format(new Date(item.deliveredDate), "dd MMM") : "—"}
                           </TableCell>
@@ -537,6 +544,7 @@ export default function AgreementsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs">Total Visits</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Sent Date</TableHead>
                       <TableHead className="text-xs">E-sign</TableHead>
                       <TableHead className="text-xs hidden md:table-cell">Email</TableHead>
@@ -546,11 +554,12 @@ export default function AgreementsPage() {
                   </TableHeader>
                   <TableBody>
                     {completedItems.length === 0 ? (
-                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No completed agreements yet.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground text-sm py-8">No completed agreements yet.</TableCell></TableRow>
                     ) : (
                       completedItems.map(a => (
                         <TableRow key={a.id} className="text-sm">
                           <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{a.lead?.visit_count || 0}</TableCell>
                           <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">
                             {format(new Date(a.created_at), "dd MMM")}
                           </TableCell>
@@ -581,9 +590,9 @@ export default function AgreementsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs">Visits</TableHead>
                       <TableHead className="text-xs">Next Visit</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Last Feedback</TableHead>
-                      <TableHead className="text-xs hidden md:table-cell">Attempts</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -596,10 +605,15 @@ export default function AgreementsPage() {
                         const lead = a.lead;
                         return (
                           <TableRow key={a.id} className="text-sm">
-                            <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
+                            <TableCell className="font-medium max-w-[180px] truncate">
+                              {a.lead?.client_name || "Unknown"}
+                              <Badge variant="outline" className="ml-1 text-[10px] bg-accent/10 text-accent border-accent/20">
+                                {lead?.visit_count || 0} {(lead?.visit_count || 0) === 1 ? "visit" : "visits"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{lead?.visit_count || 0}</TableCell>
                             <TableCell className="text-xs">{nextVisit || "—"}</TableCell>
                             <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{lead?.visit_count || 0}</TableCell>
                             <TableCell>
                               <ActionButtons orderId={a.sample_order_id} agreementId={a.id} />
                             </TableCell>
@@ -623,7 +637,7 @@ export default function AgreementsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">Client Name</TableHead>
-                      <TableHead className="text-xs hidden sm:table-cell">Attempts</TableHead>
+                      <TableHead className="text-xs">Total Visits</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Last Feedback</TableHead>
                       <TableHead className="text-xs">Reason</TableHead>
                       <TableHead className="text-xs hidden md:table-cell">Final Remarks</TableHead>
@@ -638,8 +652,13 @@ export default function AgreementsPage() {
                         const { reason, finalRemarks } = extractDropInfo(a.remarks);
                         return (
                           <TableRow key={a.id} className="text-sm">
-                            <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{a.lead?.visit_count || 0}</TableCell>
+                            <TableCell className="font-medium max-w-[180px] truncate">
+                              {a.lead?.client_name || "Unknown"}
+                              <Badge variant="outline" className="ml-1 text-[10px] bg-accent/10 text-accent border-accent/20">
+                                {a.lead?.visit_count || 0} {(a.lead?.visit_count || 0) === 1 ? "visit" : "visits"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{a.lead?.visit_count || 0}</TableCell>
                             <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
                             <TableCell className="text-xs">{reason}</TableCell>
                             <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate hidden md:table-cell">{finalRemarks}</TableCell>

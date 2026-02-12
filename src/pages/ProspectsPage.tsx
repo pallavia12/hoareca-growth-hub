@@ -42,7 +42,7 @@ export default function ProspectsPage() {
   const { prospects, loading, addProspect, updateProspect, filterProspects, refetch } = useProspects();
   const { user } = useAuth();
   const { toast } = useToast();
-  const [tab, setTab] = useState<"fresh" | "dropouts">("fresh");
+  const [tab, setTab] = useState<"fresh" | "converted" | "dropouts">("fresh");
   const [search, setSearch] = useState("");
   const [filterLocality, setFilterLocality] = useState("");
   const [filterTag, setFilterTag] = useState("");
@@ -75,10 +75,12 @@ export default function ProspectsPage() {
 
   const localities = useMemo(() => [...new Set(prospects.map(p => p.locality))].filter(Boolean).sort(), [prospects]);
 
-  // Fresh = not converted (status != converted)
-  // Converted = status === converted
+  // Fresh = not Dropped and not Qualified
   const freshProspects = useMemo(() => {
-    let list = prospects.filter(p => (p.tag || "New") !== "Dropped");
+    let list = prospects.filter(p => {
+      const t = p.tag || "New";
+      return t !== "Dropped" && t !== "Qualified";
+    });
     if (search) {
       const s = search.toLowerCase();
       list = list.filter(p => p.restaurant_name.toLowerCase().includes(s) || p.locality.toLowerCase().includes(s));
@@ -87,6 +89,17 @@ export default function ProspectsPage() {
     if (filterTag && filterTag !== "all") list = list.filter(p => (p.tag || "New") === filterTag);
     return list;
   }, [prospects, search, filterLocality, filterTag]);
+
+  // Converted = Qualified tag
+  const convertedProspects = useMemo(() => {
+    let list = prospects.filter(p => p.tag === "Qualified");
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter(p => p.restaurant_name.toLowerCase().includes(s) || p.locality.toLowerCase().includes(s));
+    }
+    if (filterLocality && filterLocality !== "all") list = list.filter(p => p.locality === filterLocality);
+    return list;
+  }, [prospects, search, filterLocality]);
 
   const droppedProspects = useMemo(() => {
     let list = prospects.filter(p => p.tag === "Dropped");
@@ -99,7 +112,8 @@ export default function ProspectsPage() {
   }, [prospects, search, filterLocality]);
 
   const counts = useMemo(() => ({
-    fresh: prospects.filter(p => (p.tag || "New") !== "Dropped").length,
+    fresh: prospects.filter(p => { const t = p.tag || "New"; return t !== "Dropped" && t !== "Qualified"; }).length,
+    converted: prospects.filter(p => p.tag === "Qualified").length,
     dropouts: prospects.filter(p => p.tag === "Dropped").length,
   }), [prospects]);
 
@@ -179,7 +193,7 @@ export default function ProspectsPage() {
     );
   }, [users, userSearch]);
 
-  const currentList = tab === "fresh" ? freshProspects : droppedProspects;
+  const currentList = tab === "fresh" ? freshProspects : tab === "converted" ? convertedProspects : droppedProspects;
 
   const buildGoogleMapsLink = (location: string | null) => {
     if (!location) return null;
@@ -253,6 +267,7 @@ export default function ProspectsPage() {
       <Tabs value={tab} onValueChange={v => setTab(v as any)}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="fresh" className="text-xs">Fresh Prospects ({counts.fresh})</TabsTrigger>
+          <TabsTrigger value="converted" className="text-xs">Converted ({counts.converted})</TabsTrigger>
           <TabsTrigger value="dropouts" className="text-xs">Drop-outs ({counts.dropouts})</TabsTrigger>
         </TabsList>
 
@@ -274,7 +289,7 @@ export default function ProspectsPage() {
               <SelectTrigger className="w-full sm:w-[140px] h-9 text-xs"><SelectValue placeholder="All Tags" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Tags</SelectItem>
-                {tagOptions.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                {tagOptions.filter(t => t !== "Qualified" && t !== "Dropped").map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
               </SelectContent>
             </Select>
           )}
@@ -285,51 +300,47 @@ export default function ProspectsPage() {
           )}
         </div>
 
-        {/* Table */}
-        <TabsContent value={tab} className="mt-3" forceMount={undefined}>
+        {/* Fresh Prospects Table */}
+        <TabsContent value="fresh" className="mt-3">
           <Card>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      {tab === "fresh" && (
-                        <TableHead className="w-10">
-                          <Checkbox
-                            checked={freshProspects.length > 0 && selectedIds.size === freshProspects.length}
-                            onCheckedChange={toggleSelectAll}
-                          />
-                        </TableHead>
-                      )}
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={freshProspects.length > 0 && selectedIds.size === freshProspects.length}
+                          onCheckedChange={toggleSelectAll}
+                        />
+                      </TableHead>
                       <TableHead className="text-xs">Restaurant Name</TableHead>
                       <TableHead className="text-xs">Locality</TableHead>
                       <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Location</TableHead>
                       <TableHead className="text-xs">Tag</TableHead>
-                      {tab === "fresh" && <TableHead className="text-xs w-24">Assign</TableHead>}
+                      <TableHead className="text-xs w-24">Assign</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loading ? (
-                      <TableRow><TableCell colSpan={tab === "fresh" ? 7 : 5} className="text-center text-muted-foreground text-sm py-8">Loading prospects...</TableCell></TableRow>
-                    ) : currentList.length === 0 ? (
-                      <TableRow><TableCell colSpan={tab === "fresh" ? 7 : 5} className="text-center text-muted-foreground text-sm py-8">
-                        {tab === "fresh" ? "No fresh prospects found. Add prospects to get started." : "No drop-outs yet."}
-                      </TableCell></TableRow>
+                      <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground text-sm py-8">Loading prospects...</TableCell></TableRow>
+                    ) : freshProspects.length === 0 ? (
+                      <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground text-sm py-8">No fresh prospects found. Add prospects to get started.</TableCell></TableRow>
                     ) : (
-                      currentList.map(p => (
+                      freshProspects.map(p => (
                         <TableRow key={p.id} className="text-sm">
-                          {tab === "fresh" && (
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedIds.has(p.id)}
-                                onCheckedChange={() => toggleSelect(p.id)}
-                              />
-                            </TableCell>
-                          )}
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedIds.has(p.id)}
+                              onCheckedChange={() => toggleSelect(p.id)}
+                            />
+                          </TableCell>
                           <TableCell className="font-medium max-w-[200px] truncate">{p.restaurant_name}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{p.mapped_to || "—"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {(p.tag || "New") === "New" ? "—" : (p.mapped_to || "—")}
+                          </TableCell>
                           <TableCell className="hidden sm:table-cell">
                             {p.location ? (
                               <a href={buildGoogleMapsLink(p.location)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
@@ -345,13 +356,109 @@ export default function ProspectsPage() {
                               {p.tag || "New"}
                             </Badge>
                           </TableCell>
-                          {tab === "fresh" && (
-                            <TableCell>
-                              <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openAssignDialog(p.id)}>
-                                Assign
-                              </Button>
-                            </TableCell>
-                          )}
+                          <TableCell>
+                            <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openAssignDialog(p.id)}>
+                              Assign
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Converted Tab */}
+        <TabsContent value="converted" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Restaurant Name</TableHead>
+                      <TableHead className="text-xs">Locality</TableHead>
+                      <TableHead className="text-xs">Assigned To</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Location</TableHead>
+                      <TableHead className="text-xs">Tag</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                    ) : convertedProspects.length === 0 ? (
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No converted prospects yet.</TableCell></TableRow>
+                    ) : (
+                      convertedProspects.map(p => (
+                        <TableRow key={p.id} className="text-sm">
+                          <TableCell className="font-medium max-w-[200px] truncate">{p.restaurant_name}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{p.mapped_to || "—"}</TableCell>
+                          <TableCell className="hidden sm:table-cell">
+                            {p.location ? (
+                              <a href={buildGoogleMapsLink(p.location)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                                <ExternalLink className="w-3 h-3" />
+                                <span className="truncate max-w-[150px]">{p.location}</span>
+                              </a>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={`text-[10px] ${tagColors["Qualified"]}`}>Qualified</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Drop-outs Tab */}
+        <TabsContent value="dropouts" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Restaurant Name</TableHead>
+                      <TableHead className="text-xs">Locality</TableHead>
+                      <TableHead className="text-xs">Assigned To</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Location</TableHead>
+                      <TableHead className="text-xs">Tag</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                    ) : droppedProspects.length === 0 ? (
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No drop-outs yet.</TableCell></TableRow>
+                    ) : (
+                      droppedProspects.map(p => (
+                        <TableRow key={p.id} className="text-sm">
+                          <TableCell className="font-medium max-w-[200px] truncate">{p.restaurant_name}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{p.mapped_to || "—"}</TableCell>
+                          <TableCell className="hidden sm:table-cell">
+                            {p.location ? (
+                              <a href={buildGoogleMapsLink(p.location)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                                <ExternalLink className="w-3 h-3" />
+                                <span className="truncate max-w-[150px]">{p.location}</span>
+                              </a>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={`text-[10px] ${tagColors["Dropped"]}`}>Dropped</Badge>
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
