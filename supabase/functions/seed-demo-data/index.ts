@@ -156,6 +156,88 @@ serve(async (req) => {
       await supabase.from("leads").insert({ client_name: "The Avocado Café", pincode: "560034", locality: "Koramangala", outlet_address: "100ft Road, Koramangala 4th Block", contact_number: "+91 98765 43210", purchase_manager_name: "Ravi Kumar", pm_contact: "+91 98765 43211", status: "qualified", avocado_consumption: "yes_imported", estimated_monthly_spend: 25000 });
     }
 
+    // Seed Step 4 sample data: leads → sample_orders → agreements
+    const step4Leads = [
+      { client_name: "Urban Bistro", pincode: "560034", locality: "Koramangala", contact_number: "9800000001", purchase_manager_name: "Amit R", status: "qualified", created_by: "kam@ninjacart.com", visit_count: 2 },
+      { client_name: "Brew House", pincode: "560038", locality: "Indiranagar", contact_number: "9800000002", purchase_manager_name: "Priya S", status: "qualified", created_by: "kam@ninjacart.com", visit_count: 1 },
+      { client_name: "Cloud Kitchen Co", pincode: "560095", locality: "Whitefield", contact_number: "9800000003", purchase_manager_name: "Raj M", status: "qualified", created_by: "kam@ninjacart.com", visit_count: 3 },
+      { client_name: "Spice Garden", pincode: "560001", locality: "MG Road", contact_number: "9800000004", purchase_manager_name: "Neha K", status: "qualified", created_by: "kam@ninjacart.com", visit_count: 2 },
+      { client_name: "Cafe Noir", pincode: "560034", locality: "Koramangala", contact_number: "9800000005", purchase_manager_name: "Vikram P", status: "qualified", created_by: "kam@ninjacart.com", visit_count: 2 },
+      { client_name: "Gourmet Hub", pincode: "560038", locality: "Indiranagar", contact_number: "9800000006", purchase_manager_name: "Sneha D", status: "qualified", created_by: "kam@ninjacart.com", visit_count: 3 },
+    ];
+
+    for (const sl of step4Leads) {
+      const { data: existingLead } = await supabase.from("leads").select("id").eq("client_name", sl.client_name).maybeSingle();
+      if (existingLead) continue;
+
+      const { data: leadData } = await supabase.from("leads").insert(sl).select("id").single();
+      if (!leadData) continue;
+
+      // Create sample order for each
+      const { data: orderData } = await supabase.from("sample_orders").insert({
+        lead_id: leadData.id,
+        status: "sample_delivered",
+        remarks: "Sample delivered for Step 4 demo",
+        delivery_date: "2026-02-13",
+        sample_qty_units: 5,
+        demand_per_week_kg: 15,
+      }).select("id").single();
+      if (!orderData) continue;
+
+      // Create agreements for specific leads
+      if (sl.client_name === "Cloud Kitchen Co") {
+        await supabase.from("agreements").insert({
+          sample_order_id: orderData.id,
+          status: "signed",
+          quality_feedback: true,
+          pricing_type: "monthly",
+          agreed_price_per_kg: 140,
+          payment_type: "credit",
+          credit_days: 15,
+          outlets_in_bangalore: 3,
+          delivery_slot: "9am-12pm",
+          distribution_partner: "DP-Whitefield",
+          expected_first_order_date: "2026-02-20",
+          expected_weekly_volume_kg: 25,
+          mail_id: "mgr@cloudkitchen.com",
+          esign_status: "signed",
+        });
+      } else if (sl.client_name === "Spice Garden") {
+        await supabase.from("agreements").insert({
+          sample_order_id: orderData.id,
+          status: "agreement_sent",
+          quality_feedback: true,
+          pricing_type: "weekly",
+          agreed_price_per_kg: 135,
+          payment_type: "cash_and_carry",
+          outlets_in_bangalore: 1,
+          delivery_slot: "12pm-3pm",
+          distribution_partner: "DP-Central",
+          expected_first_order_date: "2026-02-22",
+          expected_weekly_volume_kg: 15,
+          mail_id: "owner@spicegarden.in",
+          esign_status: "sent",
+        });
+      } else if (sl.client_name === "Cafe Noir") {
+        await supabase.from("agreements").insert({
+          sample_order_id: orderData.id,
+          status: "revisit_needed",
+          quality_feedback: true,
+          quality_remarks: "Liked the quality, discussing pricing",
+          remarks: "[Re-visit: 17 Feb 2026 at 10:00] Feedback: positive. Discussing volume discounts.",
+        });
+      } else if (sl.client_name === "Gourmet Hub") {
+        await supabase.from("agreements").insert({
+          sample_order_id: orderData.id,
+          status: "lost",
+          quality_feedback: false,
+          quality_remarks: "Too firm for their menu",
+          remarks: "[Dropped] Quality Issues: Too firm, not suitable for their recipes. Total visits: 3",
+        });
+      }
+      // Urban Bistro and Brew House have no agreement → Quality Pending
+    }
+
     return new Response(JSON.stringify({ success: true, users: results }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

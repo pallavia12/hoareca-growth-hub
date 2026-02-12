@@ -13,20 +13,21 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
-import { useAgreements, useDistributionPartners, useDeliverySlots } from "@/hooks/useAgreements";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { useAgreements, useDistributionPartners } from "@/hooks/useAgreements";
 import { supabase } from "@/integrations/supabase/client";
 import { useSampleOrders } from "@/hooks/useSampleOrders";
 import { useLeads } from "@/hooks/useLeads";
-import { useProspects } from "@/hooks/useProspects";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Search, Star, CalendarIcon, Package, MapPin, RotateCcw, XCircle,
-  Send, FileCheck, AlertTriangle, Clock, Plus,
+  Search, CalendarIcon, Send, RotateCcw, XCircle, AlertTriangle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -39,45 +40,38 @@ const dropReasons = [
   "Quality Issues", "Price Rejected", "Payment Terms", "Competition", "Changed Mind", "Other",
 ];
 
-const esignBadge: Record<string, string> = {
+const esignBadgeClass: Record<string, string> = {
   not_sent: "bg-muted text-muted-foreground",
-  sent: "bg-info/10 text-info",
-  signed: "bg-success/10 text-success",
-  expired: "bg-destructive/10 text-destructive",
+  sent: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  signed: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+  expired: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
 };
 
-const statusBadge: Record<string, string> = {
-  pending_feedback: "bg-muted text-muted-foreground",
-  quality_failed: "bg-warning/10 text-warning",
-  negotiating: "bg-info/10 text-info",
-  agreement_sent: "bg-info/10 text-info",
-  signed: "bg-success/10 text-success",
-  revisit_needed: "bg-warning/10 text-warning",
-  lost: "bg-destructive/10 text-destructive",
-};
-
-interface FormErrors {
-  [key: string]: string;
-}
+interface FormErrors { [key: string]: string; }
 
 export default function AgreementsPage() {
-  const { agreements, loading, addAgreement, updateAgreement, refetch } = useAgreements();
+  const { agreements, loading, addAgreement, updateAgreement } = useAgreements();
   const { orders } = useSampleOrders();
-  const { leads } = useLeads();
-  const { prospects } = useProspects();
+  const { leads, updateLead } = useLeads();
   const partners = useDistributionPartners();
-  const slots = useDeliverySlots();
   const { toast } = useToast();
 
-  const [tab, setTab] = useState<"pending" | "negotiating" | "agreement" | "revisit" | "dropped">("pending");
+  const [tab, setTab] = useState<"pending" | "completed" | "revisit" | "dropped">("pending");
   const [search, setSearch] = useState("");
 
-  // Create form state
-  const [createOpen, setCreateOpen] = useState(false);
-  const [selectedOrderId, setSelectedOrderId] = useState("");
-  const [rating, setRating] = useState(0);
-  const [qualityRemarks, setQualityRemarks] = useState("");
-  const [errors, setErrors] = useState<FormErrors>({});
+  // Completed tab filters
+  const [filterEsign, setFilterEsign] = useState("");
+  const [dateFrom, setDateFrom] = useState<Date | undefined>();
+  const [dateTo, setDateTo] = useState<Date | undefined>();
+
+  // Send Agreement dialog
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sendOrderId, setSendOrderId] = useState<string | null>(null);
+  const [sendAgreementId, setSendAgreementId] = useState<string | null>(null); // for revisits
+
+  // Quality feedback
+  const [feedback, setFeedback] = useState<"positive" | "negative" | "">("");
+  const [feedbackRemarks, setFeedbackRemarks] = useState("");
 
   // Agreement fields
   const [pricingType, setPricingType] = useState("");
@@ -93,45 +87,26 @@ export default function AgreementsPage() {
   const [selectedSkus, setSelectedSkus] = useState<string[]>([]);
   const [mailId, setMailId] = useState("");
   const [kamRemarks, setKamRemarks] = useState("");
+  const [errors, setErrors] = useState<FormErrors>({});
 
-  // Drop dialog
+  // Schedule Revisit dialog
+  const [revisitOpen, setRevisitOpen] = useState(false);
+  const [revisitOrderId, setRevisitOrderId] = useState<string | null>(null);
+  const [revisitAgreementId, setRevisitAgreementId] = useState<string | null>(null);
+  const [revisitFeedback, setRevisitFeedback] = useState<"positive" | "negative" | "">("");
+  const [revisitFeedbackRemarks, setRevisitFeedbackRemarks] = useState("");
+  const [revisitDate, setRevisitDate] = useState<Date | undefined>();
+  const [revisitTime, setRevisitTime] = useState("");
+  const [revisitRemarks, setRevisitRemarks] = useState("");
+
+  // Not Interested dialog
+  const [dropOpen, setDropOpen] = useState(false);
+  const [dropOrderId, setDropOrderId] = useState<string | null>(null);
   const [dropAgreementId, setDropAgreementId] = useState<string | null>(null);
   const [dropReason, setDropReason] = useState("");
   const [dropRemarks, setDropRemarks] = useState("");
 
-  // Revisit dialog
-  const [revisitAgreementId, setRevisitAgreementId] = useState<string | null>(null);
-  const [revisitDate, setRevisitDate] = useState<Date | undefined>();
-  const [revisitRemarks, setRevisitRemarks] = useState("");
-  const [revisitTime, setRevisitTime] = useState("");
-
-  // Low-rating revisit fields (inline in create dialog)
-  const [lowRatingRevisitDate, setLowRatingRevisitDate] = useState<Date | undefined>();
-  const [lowRatingRevisitTime, setLowRatingRevisitTime] = useState("");
-
-  // Fresh prospect agreement
-  const [freshProspectOpen, setFreshProspectOpen] = useState(false);
-  const [selectedProspectId, setSelectedProspectId] = useState("");
-  const [freshMode, setFreshMode] = useState(false);
-
-  // Sample orders without an agreement = "Quality Pending"
-  const pendingOrders = useMemo(() => {
-    const agreementOrderIds = new Set(agreements.map(a => a.sample_order_id));
-    return orders
-      .filter(o => ["sample_ordered", "sample_delivered"].includes(o.status) && !agreementOrderIds.has(o.id))
-      .map(o => {
-        const lead = leads.find(l => l.id === o.lead_id);
-        return { ...o, lead };
-      });
-  }, [orders, agreements, leads]);
-
-  const selectedOrder = useMemo(() => orders.find(o => o.id === selectedOrderId), [orders, selectedOrderId]);
-  const selectedLead = useMemo(() => {
-    if (!selectedOrder) return null;
-    return leads.find(l => l.id === selectedOrder.lead_id) || null;
-  }, [selectedOrder, leads]);
-
-  // Enrich agreements with lead/order data
+  // Enriched data
   const enriched = useMemo(() => {
     return agreements.map(a => {
       const order = orders.find(o => o.id === a.sample_order_id);
@@ -140,36 +115,69 @@ export default function AgreementsPage() {
     });
   }, [agreements, orders, leads]);
 
-  // Filter pending orders by search
-  const filteredPending = useMemo(() => {
-    if (!search) return pendingOrders;
-    const s = search.toLowerCase();
-    return pendingOrders.filter(o =>
-      o.lead?.client_name?.toLowerCase().includes(s) || o.lead?.pincode?.includes(s)
-    );
-  }, [pendingOrders, search]);
-
-  // Filter agreements by tab
-  const filteredAgreements = useMemo(() => {
-    let list = enriched;
+  // Quality Pending: sample orders delivered without agreement OR with pending_feedback agreement
+  const pendingItems = useMemo(() => {
+    const agreementOrderIds = new Set(agreements.map(a => a.sample_order_id));
+    const fromOrders = orders
+      .filter(o => ["sample_ordered", "sample_delivered"].includes(o.status) && !agreementOrderIds.has(o.id))
+      .map(o => {
+        const lead = leads.find(l => l.id === o.lead_id);
+        return { type: "order" as const, orderId: o.id, agreementId: null, clientName: lead?.client_name || "Unknown", deliveredDate: o.delivery_date || o.updated_at, kam: lead?.created_by || "—", lead, order: o };
+      });
+    const fromAgreements = enriched
+      .filter(a => a.status === "pending_feedback")
+      .map(a => ({
+        type: "agreement" as const, orderId: a.sample_order_id, agreementId: a.id, clientName: a.lead?.client_name || "Unknown", deliveredDate: a.order?.delivery_date || a.created_at, kam: a.lead?.created_by || "—", lead: a.lead, order: a.order,
+      }));
+    let items = [...fromOrders, ...fromAgreements];
     if (search) {
       const s = search.toLowerCase();
-      list = list.filter(a => a.lead?.client_name?.toLowerCase().includes(s) || a.lead?.pincode?.includes(s));
+      items = items.filter(i => i.clientName.toLowerCase().includes(s));
     }
-    if (tab === "negotiating") return list.filter(a => ["agreement_sent", "negotiating", "quality_failed", "pending_feedback"].includes(a.status));
-    if (tab === "agreement") return list.filter(a => a.status === "signed");
-    if (tab === "revisit") return list.filter(a => a.status === "revisit_needed");
-    if (tab === "dropped") return list.filter(a => a.status === "lost");
-    return [];
-  }, [enriched, search, tab]);
+    return items;
+  }, [orders, agreements, enriched, leads, search]);
+
+  // Completed: agreement_sent or signed
+  const completedItems = useMemo(() => {
+    let items = enriched.filter(a => ["agreement_sent", "signed"].includes(a.status));
+    if (search) {
+      const s = search.toLowerCase();
+      items = items.filter(a => (a.lead?.client_name || "").toLowerCase().includes(s));
+    }
+    if (filterEsign && filterEsign !== "all") {
+      items = items.filter(a => a.esign_status === filterEsign);
+    }
+    if (dateFrom) items = items.filter(a => new Date(a.created_at) >= dateFrom);
+    if (dateTo) items = items.filter(a => new Date(a.created_at) <= dateTo);
+    return items;
+  }, [enriched, search, filterEsign, dateFrom, dateTo]);
+
+  // Revisits
+  const revisitItems = useMemo(() => {
+    let items = enriched.filter(a => a.status === "revisit_needed");
+    if (search) {
+      const s = search.toLowerCase();
+      items = items.filter(a => (a.lead?.client_name || "").toLowerCase().includes(s));
+    }
+    return items;
+  }, [enriched, search]);
+
+  // Dropped
+  const droppedItems = useMemo(() => {
+    let items = enriched.filter(a => a.status === "lost");
+    if (search) {
+      const s = search.toLowerCase();
+      items = items.filter(a => (a.lead?.client_name || "").toLowerCase().includes(s));
+    }
+    return items;
+  }, [enriched, search]);
 
   const counts = useMemo(() => ({
-    pending: pendingOrders.length,
-    negotiating: enriched.filter(a => ["agreement_sent", "negotiating", "quality_failed", "pending_feedback"].includes(a.status)).length,
-    agreement: enriched.filter(a => a.status === "signed").length,
-    revisit: enriched.filter(a => a.status === "revisit_needed").length,
-    dropped: enriched.filter(a => a.status === "lost").length,
-  }), [pendingOrders, enriched]);
+    pending: pendingItems.length,
+    completed: completedItems.length,
+    revisit: revisitItems.length,
+    dropped: droppedItems.length,
+  }), [pendingItems, completedItems, revisitItems, droppedItems]);
 
   const marginWarning = useMemo(() => {
     if (!agreedPrice) return false;
@@ -177,10 +185,11 @@ export default function AgreementsPage() {
     return margin < 90 || margin > 100;
   }, [agreedPrice]);
 
-  const resetForm = () => {
-    setSelectedOrderId("");
-    setRating(0);
-    setQualityRemarks("");
+  const resetSendForm = () => {
+    setSendOrderId(null);
+    setSendAgreementId(null);
+    setFeedback("");
+    setFeedbackRemarks("");
     setPricingType("");
     setAgreedPrice("");
     setPaymentType("");
@@ -195,661 +204,695 @@ export default function AgreementsPage() {
     setMailId("");
     setKamRemarks("");
     setErrors({});
-    setLowRatingRevisitDate(undefined);
-    setLowRatingRevisitTime("");
-    setFreshMode(false);
-    setSelectedProspectId("");
   };
 
   const validate = (): FormErrors => {
     const e: FormErrors = {};
-    if (rating === 0) e.rating = "Rating is required";
-    if (rating > 0 && rating < 6 && !qualityRemarks.trim()) e.qualityRemarks = "Feedback remarks required for low rating";
-    if (rating > 0 && rating < 6 && !lowRatingRevisitDate) e.lowRatingRevisitDate = "Revisit date required for low rating";
-    if (rating >= 6) {
-      if (!pricingType) e.pricingType = "Required";
-      if (!agreedPrice || Number(agreedPrice) <= 0) e.agreedPrice = "Required";
-      if (!paymentType) e.paymentType = "Required";
-      if (paymentType === "credit" && (!creditDays || Number(creditDays) <= 0)) e.creditDays = "Required for credit";
-      if (!outletsInBangalore || Number(outletsInBangalore) <= 0) e.outletsInBangalore = "Required";
-      if (!deliverySlot) e.deliverySlot = "Required";
-      if (!distributionPartner) e.distributionPartner = "Required";
-      if (!expectedFirstOrder) e.expectedFirstOrder = "Required";
-      if (!expectedWeeklyVolume || Number(expectedWeeklyVolume) <= 0) e.expectedWeeklyVolume = "Must be > 0";
-      if (!mailId.trim()) e.mailId = "Required";
-      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mailId)) e.mailId = "Invalid email";
-    }
+    if (!feedback) e.feedback = "Required";
+    if (!pricingType) e.pricingType = "Required";
+    if (!agreedPrice || Number(agreedPrice) <= 0) e.agreedPrice = "Required";
+    if (!paymentType) e.paymentType = "Required";
+    if (paymentType === "credit" && (!creditDays || Number(creditDays) <= 0)) e.creditDays = "Required";
+    if (!outletsInBangalore || Number(outletsInBangalore) <= 0) e.outletsInBangalore = "Required";
+    if (!deliverySlot) e.deliverySlot = "Required";
+    if (!distributionPartner) e.distributionPartner = "Required";
+    if (!expectedFirstOrder) e.expectedFirstOrder = "Required";
+    if (!expectedWeeklyVolume || Number(expectedWeeklyVolume) <= 0) e.expectedWeeklyVolume = "Required";
+    if (!mailId.trim()) e.mailId = "Required";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mailId)) e.mailId = "Invalid email";
     return e;
   };
 
-  const handleSave = async () => {
-    let orderId = selectedOrderId;
+  const getLeadForOrder = (orderId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    return order ? leads.find(l => l.id === order.lead_id) : null;
+  };
 
-    // Fresh prospect mode: create lead + sample order first
-    if (freshMode && !orderId && selectedProspectId) {
-      const prospect = prospects.find(p => p.id === selectedProspectId);
-      if (!prospect) return;
-
-      // Create a lead from the prospect
-      const { data: leadData, error: leadErr } = await supabase
-        .from("leads")
-        .insert({
-          client_name: prospect.restaurant_name,
-          pincode: prospect.pincode,
-          locality: prospect.locality,
-          prospect_id: prospect.id,
-          status: "qualified",
-        })
-        .select("id")
-        .single();
-      if (leadErr || !leadData) {
-        toast({ title: "Error creating lead", description: leadErr?.message, variant: "destructive" });
-        return;
-      }
-
-      // Create a placeholder sample order
-      const { data: orderData, error: orderErr } = await supabase
-        .from("sample_orders")
-        .insert({
-          lead_id: leadData.id,
-          status: "sample_delivered",
-          remarks: "Created via fresh prospect agreement flow",
-        })
-        .select("id")
-        .single();
-      if (orderErr || !orderData) {
-        toast({ title: "Error creating sample order", description: orderErr?.message, variant: "destructive" });
-        return;
-      }
-
-      orderId = orderData.id;
+  const incrementVisitCount = async (orderId: string) => {
+    const lead = getLeadForOrder(orderId);
+    if (lead) {
+      await updateLead(lead.id, { visit_count: (lead.visit_count || 0) + 1 });
     }
+  };
 
-    if (!orderId) return;
+  const handleSendAgreement = async () => {
     const e = validate();
     setErrors(e);
     if (Object.keys(e).length > 0) return;
 
-    if (rating < 6) {
-      const revisitInfo = lowRatingRevisitDate
-        ? ` [Re-visit: ${format(lowRatingRevisitDate, "dd MMM yyyy")}${lowRatingRevisitTime ? " at " + lowRatingRevisitTime : ""}]`
-        : "";
-      const ok = await addAgreement({
-        sample_order_id: orderId,
-        quality_feedback: false,
-        quality_remarks: qualityRemarks + revisitInfo,
-        status: "revisit_needed",
-        remarks: lowRatingRevisitDate ? `[Re-visit: ${format(lowRatingRevisitDate, "dd MMM yyyy")}${lowRatingRevisitTime ? " at " + lowRatingRevisitTime : ""}] ${qualityRemarks}` : null,
+    const orderId = sendOrderId;
+    if (!orderId) return;
+
+    if (sendAgreementId) {
+      // Updating existing agreement from revisit
+      const ok = await updateAgreement(sendAgreementId, {
+        quality_feedback: feedback === "positive",
+        quality_remarks: feedbackRemarks || null,
+        pricing_type: pricingType,
+        agreed_price_per_kg: Number(agreedPrice),
+        payment_type: paymentType,
+        credit_days: paymentType === "credit" ? Number(creditDays) : null,
+        outlets_in_bangalore: Number(outletsInBangalore),
+        other_cities: otherCities ? otherCities.split(",").map(c => c.trim()).filter(Boolean) : null,
+        delivery_slot: deliverySlot,
+        distribution_partner: distributionPartner,
+        expected_first_order_date: expectedFirstOrder ? format(expectedFirstOrder, "yyyy-MM-dd") : null,
+        expected_weekly_volume_kg: Number(expectedWeeklyVolume),
+        other_skus: selectedSkus.length > 0 ? selectedSkus : null,
+        mail_id: mailId,
+        remarks: kamRemarks || null,
+        status: "agreement_sent",
+        esign_status: "sent",
       });
       if (ok) {
-        toast({ title: "Quality feedback saved & revisit scheduled" });
-        resetForm();
-        setCreateOpen(false);
+        await incrementVisitCount(orderId);
+        toast({ title: `Agreement sent to ${mailId}` });
+        resetSendForm();
+        setSendOpen(false);
       }
-      return;
-    }
-
-    const ok = await addAgreement({
-      sample_order_id: orderId,
-      quality_feedback: true,
-      quality_remarks: qualityRemarks || null,
-      pricing_type: pricingType,
-      agreed_price_per_kg: Number(agreedPrice),
-      payment_type: paymentType,
-      credit_days: paymentType === "credit" ? Number(creditDays) : null,
-      outlets_in_bangalore: Number(outletsInBangalore),
-      other_cities: otherCities ? otherCities.split(",").map(c => c.trim()).filter(Boolean) : null,
-      delivery_slot: deliverySlot,
-      distribution_partner: distributionPartner,
-      expected_first_order_date: expectedFirstOrder ? format(expectedFirstOrder, "yyyy-MM-dd") : null,
-      expected_weekly_volume_kg: Number(expectedWeeklyVolume),
-      other_skus: selectedSkus.length > 0 ? selectedSkus : null,
-      mail_id: mailId,
-      remarks: kamRemarks || null,
-      status: "agreement_sent",
-      esign_status: "sent",
-    });
-    if (ok) {
-      toast({ title: `Agreement sent to ${mailId}` });
-      resetForm();
-      setCreateOpen(false);
-    }
-  };
-
-  const handleDrop = async () => {
-    if (!dropAgreementId || !dropReason || !dropRemarks.trim()) return;
-    const ok = await updateAgreement(dropAgreementId, {
-      status: "lost",
-      remarks: `[Lost] ${dropReason}: ${dropRemarks}`,
-    });
-    if (ok) {
-      toast({ title: "Lead marked as lost" });
-      setDropAgreementId(null);
-      setDropReason("");
-      setDropRemarks("");
+    } else {
+      // New agreement
+      const ok = await addAgreement({
+        sample_order_id: orderId,
+        quality_feedback: feedback === "positive",
+        quality_remarks: feedbackRemarks || null,
+        pricing_type: pricingType,
+        agreed_price_per_kg: Number(agreedPrice),
+        payment_type: paymentType,
+        credit_days: paymentType === "credit" ? Number(creditDays) : null,
+        outlets_in_bangalore: Number(outletsInBangalore),
+        other_cities: otherCities ? otherCities.split(",").map(c => c.trim()).filter(Boolean) : null,
+        delivery_slot: deliverySlot,
+        distribution_partner: distributionPartner,
+        expected_first_order_date: expectedFirstOrder ? format(expectedFirstOrder, "yyyy-MM-dd") : null,
+        expected_weekly_volume_kg: Number(expectedWeeklyVolume),
+        other_skus: selectedSkus.length > 0 ? selectedSkus : null,
+        mail_id: mailId,
+        remarks: kamRemarks || null,
+        status: "agreement_sent",
+        esign_status: "sent",
+      });
+      if (ok) {
+        await incrementVisitCount(orderId);
+        toast({ title: `Agreement sent to ${mailId}` });
+        resetSendForm();
+        setSendOpen(false);
+      }
     }
   };
 
-  const handleRevisit = async () => {
-    if (!revisitAgreementId || !revisitDate) return;
+  const handleScheduleRevisit = async () => {
+    if (!revisitFeedback || !revisitDate || !revisitRemarks.trim()) return;
+    const orderId = revisitOrderId;
+    if (!orderId) return;
+
     const timeStr = revisitTime ? ` at ${revisitTime}` : "";
-    const ok = await updateAgreement(revisitAgreementId, {
-      status: "revisit_needed",
-      remarks: `[Re-visit: ${format(revisitDate, "dd MMM yyyy")}${timeStr}] ${revisitRemarks}`,
-    });
-    if (ok) {
-      toast({ title: `Re-visit scheduled for ${format(revisitDate, "dd MMM yyyy")}${timeStr}` });
-      setRevisitAgreementId(null);
-      setRevisitDate(undefined);
-      setRevisitRemarks("");
-      setRevisitTime("");
+    const remarksStr = `[Re-visit: ${format(revisitDate, "dd MMM yyyy")}${timeStr}] Feedback: ${revisitFeedback}. ${revisitFeedbackRemarks ? revisitFeedbackRemarks + ". " : ""}${revisitRemarks}`;
+
+    if (revisitAgreementId) {
+      await updateAgreement(revisitAgreementId, {
+        status: "revisit_needed",
+        quality_feedback: revisitFeedback === "positive",
+        quality_remarks: revisitFeedbackRemarks || null,
+        remarks: remarksStr,
+      });
+    } else {
+      await addAgreement({
+        sample_order_id: orderId,
+        status: "revisit_needed",
+        quality_feedback: revisitFeedback === "positive",
+        quality_remarks: revisitFeedbackRemarks || null,
+        remarks: remarksStr,
+      });
     }
+    await incrementVisitCount(orderId);
+    toast({ title: `Revisit scheduled for ${format(revisitDate, "dd MMM yyyy")}${timeStr}` });
+    setRevisitOpen(false);
+    setRevisitOrderId(null);
+    setRevisitAgreementId(null);
+    setRevisitFeedback("");
+    setRevisitFeedbackRemarks("");
+    setRevisitDate(undefined);
+    setRevisitTime("");
+    setRevisitRemarks("");
   };
 
-  // Handle creating agreement from pending card directly
-  const openCreateForOrder = (orderId: string) => {
-    resetForm();
-    setSelectedOrderId(orderId);
-    setCreateOpen(true);
+  const handleNotInterested = async () => {
+    if (!dropReason || !dropRemarks.trim()) return;
+    const orderId = dropOrderId;
+    if (!orderId) return;
+
+    const lead = getLeadForOrder(orderId);
+    const totalVisits = lead?.visit_count || 0;
+
+    if (dropAgreementId) {
+      await updateAgreement(dropAgreementId, {
+        status: "lost",
+        remarks: `[Dropped] ${dropReason}: ${dropRemarks}. Total visits: ${totalVisits}`,
+      });
+    } else {
+      await addAgreement({
+        sample_order_id: orderId,
+        status: "lost",
+        remarks: `[Dropped] ${dropReason}: ${dropRemarks}. Total visits: ${totalVisits}`,
+      });
+    }
+    toast({ title: "Marked as not interested", variant: "destructive" });
+    setDropOpen(false);
+    setDropOrderId(null);
+    setDropAgreementId(null);
+    setDropReason("");
+    setDropRemarks("");
   };
 
-  const StarRating = ({ value, onChange }: { value: number; onChange: (v: number) => void }) => (
-    <div className="flex gap-1">
-      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => (
-        <button key={i} type="button" onClick={() => onChange(i)} className="focus:outline-none">
-          <Star className={cn("w-5 h-5 transition-colors", i <= value ? "fill-warning text-warning" : "text-muted-foreground/30")} />
-        </button>
-      ))}
-    </div>
-  );
+  const openSendAgreement = (orderId: string, agreementId?: string | null) => {
+    resetSendForm();
+    setSendOrderId(orderId);
+    setSendAgreementId(agreementId || null);
+    setSendOpen(true);
+  };
+
+  const openScheduleRevisit = (orderId: string, agreementId?: string | null) => {
+    setRevisitOrderId(orderId);
+    setRevisitAgreementId(agreementId || null);
+    setRevisitFeedback("");
+    setRevisitFeedbackRemarks("");
+    setRevisitDate(undefined);
+    setRevisitTime("");
+    setRevisitRemarks("");
+    setRevisitOpen(true);
+  };
+
+  const openNotInterested = (orderId: string, agreementId?: string | null) => {
+    setDropOrderId(orderId);
+    setDropAgreementId(agreementId || null);
+    setDropReason("");
+    setDropRemarks("");
+    setDropOpen(true);
+  };
+
+  const extractRevisitDate = (remarks: string | null) => {
+    if (!remarks) return null;
+    const match = remarks.match(/Re-visit:\s*([^[\]]+?)(?:\]|$)/);
+    return match ? match[1].trim() : null;
+  };
+
+  const extractFeedback = (a: typeof enriched[0]) => {
+    if (a.quality_feedback === true) return "Positive";
+    if (a.quality_feedback === false) return "Negative";
+    return "—";
+  };
+
+  const extractDropInfo = (remarks: string | null) => {
+    if (!remarks) return { reason: "—", finalRemarks: "—" };
+    const match = remarks.match(/\[Dropped\]\s*([^:]+):\s*(.*?)(?:\.\s*Total|$)/s);
+    if (match) return { reason: match[1].trim(), finalRemarks: match[2].trim() };
+    return { reason: "—", finalRemarks: remarks };
+  };
 
   const FieldError = ({ msg }: { msg?: string }) => msg ? <p className="text-xs text-destructive mt-0.5">{msg}</p> : null;
 
-  // Render a pending sample order card
-  const renderPendingCard = (o: typeof pendingOrders[0]) => (
-    <Card key={o.id} className="hover:shadow-md transition-shadow">
-      <CardContent className="p-4 space-y-3">
-        <div className="flex items-start justify-between">
-          <div className="min-w-0">
-            <p className="font-semibold text-sm truncate">{o.lead?.client_name || "Unknown"}</p>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <MapPin className="w-3 h-3" /> {o.lead?.locality || o.lead?.pincode || "—"}
-            </p>
-          </div>
-          <Badge variant="outline" className="bg-muted text-muted-foreground text-[10px]">
-            Quality Pending
-          </Badge>
-        </div>
-
-        <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <Package className="w-3 h-3" /> {o.sample_qty_units || "—"} units
-          </span>
-          <span>Demand: {o.demand_per_week_kg || "—"} kg/wk</span>
-          {o.delivery_date && (
-            <span className="flex items-center gap-1">
-              <CalendarIcon className="w-3 h-3" /> {format(new Date(o.delivery_date), "dd MMM")}
-            </span>
-          )}
-          <span>{o.status === "sample_delivered" ? "Delivered" : "Ordered"}</span>
-        </div>
-
-        {o.remarks && (
-          <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{o.remarks}</p>
-        )}
-
-        <Button size="sm" className="w-full text-xs h-8" onClick={() => openCreateForOrder(o.id)}>
-          <Star className="w-3 h-3 mr-1" /> Rate Quality & Create Agreement
-        </Button>
-      </CardContent>
-    </Card>
-  );
-
-  // Render an agreement card
-  const renderAgreementCard = (a: typeof enriched[0]) => (
-    <Card key={a.id} className="hover:shadow-md transition-shadow">
-      <CardContent className="p-4 space-y-3">
-        <div className="flex items-start justify-between">
-          <div className="min-w-0">
-            <p className="font-semibold text-sm truncate">{a.lead?.client_name || "Unknown"}</p>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <MapPin className="w-3 h-3" /> {a.lead?.locality || a.lead?.pincode || "—"}
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-1">
-            <Badge variant="outline" className={`text-[10px] ${statusBadge[a.status] || ""}`}>
-              {a.status.replace(/_/g, " ")}
-            </Badge>
-            {a.esign_status && a.esign_status !== "not_sent" && (
-              <Badge variant="outline" className={`text-[10px] ${esignBadge[a.esign_status] || ""}`}>
-                e-sign: {a.esign_status}
-              </Badge>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
-          {a.quality_feedback !== null && (
-            <span className="flex items-center gap-1">
-              <Star className="w-3 h-3" /> Quality: {a.quality_feedback ? "Pass" : "Fail"}
-            </span>
-          )}
-          {a.agreed_price_per_kg && (
-            <span>₹{a.agreed_price_per_kg}/kg</span>
-          )}
-          {a.expected_weekly_volume_kg && (
-            <span><Package className="w-3 h-3 inline" /> {a.expected_weekly_volume_kg} kg/wk</span>
-          )}
-          {a.distribution_partner && (
-            <span className="truncate">{a.distribution_partner}</span>
-          )}
-        </div>
-
-        {a.remarks && (
-          <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{a.remarks}</p>
-        )}
-
-        { !["lost", "signed"].includes(a.status) && (
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" className="text-xs flex-1 h-8" onClick={() => setRevisitAgreementId(a.id)}>
-              <RotateCcw className="w-3 h-3 mr-1" /> Re-visit
-            </Button>
-            <Button size="sm" variant="outline" className="text-xs flex-1 h-8 text-destructive" onClick={() => setDropAgreementId(a.id)}>
-              <XCircle className="w-3 h-3 mr-1" /> Drop
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+  const ActionButtons = ({ orderId, agreementId }: { orderId: string; agreementId?: string | null }) => (
+    <div className="flex gap-1 flex-wrap">
+      <Button size="sm" className="text-xs h-7" onClick={() => openSendAgreement(orderId, agreementId)}>
+        <Send className="w-3 h-3 mr-1" /> Send Agreement
+      </Button>
+      <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openScheduleRevisit(orderId, agreementId)}>
+        <RotateCcw className="w-3 h-3 mr-1" /> Revisit
+      </Button>
+      <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => openNotInterested(orderId, agreementId)}>
+        <XCircle className="w-3 h-3 mr-1" /> Not Interested
+      </Button>
+    </div>
   );
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">Step 4: Sample Order to Agreement</h1>
-          <p className="text-sm text-muted-foreground">
-            {pendingOrders.length} pending · {agreements.length} agreements
-          </p>
-        </div>
-        <Button size="sm" onClick={() => { resetForm(); setFreshMode(true); setCreateOpen(true); }}>
-          <Plus className="w-4 h-4 mr-1" /> New Agreement (Fresh Prospect)
-        </Button>
+      <div>
+        <h1 className="text-xl font-bold text-foreground">Step 4: Sample Order to Agreement</h1>
+        <p className="text-sm text-muted-foreground">
+          {counts.pending} pending · {counts.completed} completed · {counts.revisit} revisits
+        </p>
       </div>
 
-      {/* Tabs */}
       <Tabs value={tab} onValueChange={v => setTab(v as any)}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="pending" className="text-xs">Quality Pending ({counts.pending})</TabsTrigger>
-          <TabsTrigger value="negotiating" className="text-xs">Negotiating ({counts.negotiating})</TabsTrigger>
-          <TabsTrigger value="agreement" className="text-xs">Agreement ({counts.agreement})</TabsTrigger>
-          <TabsTrigger value="revisit" className="text-xs">Re-visits ({counts.revisit})</TabsTrigger>
-          <TabsTrigger value="dropped" className="text-xs">Dropped ({counts.dropped})</TabsTrigger>
+          <TabsTrigger value="completed" className="text-xs">Completed ({counts.completed})</TabsTrigger>
+          <TabsTrigger value="revisit" className="text-xs">Revisits ({counts.revisit})</TabsTrigger>
+          <TabsTrigger value="dropped" className="text-xs">Drop-outs ({counts.dropped})</TabsTrigger>
         </TabsList>
 
-        {/* Search */}
-        <div className="flex gap-2 mt-3">
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-2 mt-3">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search client name, pincode..." className="pl-8 h-9 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
+            <Input placeholder="Search client name..." className="pl-8 h-9 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          {tab === "completed" && (
+            <>
+              <Select value={filterEsign} onValueChange={setFilterEsign}>
+                <SelectTrigger className="w-full sm:w-[140px] h-9 text-xs"><SelectValue placeholder="E-sign Status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="sent">Sent</SelectItem>
+                  <SelectItem value="signed">Signed</SelectItem>
+                  <SelectItem value="expired">Expired</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="flex gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className={cn("text-xs h-9", !dateFrom && "text-muted-foreground")}>
+                      <CalendarIcon className="w-3 h-3 mr-1" />
+                      {dateFrom ? format(dateFrom, "dd MMM") : "From"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" selected={dateFrom} onSelect={setDateFrom} initialFocus className="p-3 pointer-events-auto" />
+                  </PopoverContent>
+                </Popover>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className={cn("text-xs h-9", !dateTo && "text-muted-foreground")}>
+                      <CalendarIcon className="w-3 h-3 mr-1" />
+                      {dateTo ? format(dateTo, "dd MMM") : "To"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" selected={dateTo} onSelect={setDateTo} initialFocus className="p-3 pointer-events-auto" />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Pending Tab - Sample Orders without agreements */}
+        {/* Quality Pending Tab */}
         <TabsContent value="pending" className="mt-3">
-          {loading ? (
-            <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
-          ) : filteredPending.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground text-sm">No sample orders pending quality feedback</div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredPending.map(renderPendingCard)}
-            </div>
-          )}
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Sample Delivered</TableHead>
+                      <TableHead className="text-xs hidden md:table-cell">KAM</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                    ) : pendingItems.length === 0 ? (
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No sample orders pending quality feedback.</TableCell></TableRow>
+                    ) : (
+                      pendingItems.map(item => (
+                        <TableRow key={item.orderId} className="text-sm">
+                          <TableCell className="font-medium max-w-[180px] truncate">{item.clientName}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">
+                            {item.deliveredDate ? format(new Date(item.deliveredDate), "dd MMM") : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{item.kam}</TableCell>
+                          <TableCell>
+                            <ActionButtons orderId={item.orderId} agreementId={item.agreementId} />
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        {/* Other tabs - Agreement cards */}
-        {(["negotiating", "agreement", "revisit", "dropped"] as const).map(t => (
-          <TabsContent key={t} value={t} className="mt-3">
-            {loading ? (
-              <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
-            ) : filteredAgreements.length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground text-sm">No agreements found</div>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {filteredAgreements.map(renderAgreementCard)}
+        {/* Completed Tab */}
+        <TabsContent value="completed" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Sent Date</TableHead>
+                      <TableHead className="text-xs">E-sign</TableHead>
+                      <TableHead className="text-xs hidden md:table-cell">Email</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Price ₹/kg</TableHead>
+                      <TableHead className="text-xs hidden md:table-cell">Weekly Vol</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {completedItems.length === 0 ? (
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No completed agreements yet.</TableCell></TableRow>
+                    ) : (
+                      completedItems.map(a => (
+                        <TableRow key={a.id} className="text-sm">
+                          <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">
+                            {format(new Date(a.created_at), "dd MMM")}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={`text-[10px] ${esignBadgeClass[a.esign_status || "not_sent"]}`}>
+                              {(a.esign_status || "not_sent").replace(/_/g, " ")}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground hidden md:table-cell truncate max-w-[140px]">{a.mail_id || "—"}</TableCell>
+                          <TableCell className="text-xs hidden sm:table-cell">{a.agreed_price_per_kg ? `₹${a.agreed_price_per_kg}` : "—"}</TableCell>
+                          <TableCell className="text-xs hidden md:table-cell">{a.expected_weekly_volume_kg ? `${a.expected_weekly_volume_kg} kg` : "—"}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
               </div>
-            )}
-          </TabsContent>
-        ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Revisits Tab */}
+        <TabsContent value="revisit" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs">Next Visit</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Last Feedback</TableHead>
+                      <TableHead className="text-xs hidden md:table-cell">Attempts</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {revisitItems.length === 0 ? (
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No revisits scheduled.</TableCell></TableRow>
+                    ) : (
+                      revisitItems.map(a => {
+                        const nextVisit = extractRevisitDate(a.remarks);
+                        const lead = a.lead;
+                        return (
+                          <TableRow key={a.id} className="text-sm">
+                            <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
+                            <TableCell className="text-xs">{nextVisit || "—"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{lead?.visit_count || 0}</TableCell>
+                            <TableCell>
+                              <ActionButtons orderId={a.sample_order_id} agreementId={a.id} />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Drop-outs Tab */}
+        <TabsContent value="dropped" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Attempts</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Last Feedback</TableHead>
+                      <TableHead className="text-xs">Reason</TableHead>
+                      <TableHead className="text-xs hidden md:table-cell">Final Remarks</TableHead>
+                      <TableHead className="text-xs hidden md:table-cell">Dropped</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {droppedItems.length === 0 ? (
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No drop-outs.</TableCell></TableRow>
+                    ) : (
+                      droppedItems.map(a => {
+                        const { reason, finalRemarks } = extractDropInfo(a.remarks);
+                        return (
+                          <TableRow key={a.id} className="text-sm">
+                            <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{a.lead?.visit_count || 0}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
+                            <TableCell className="text-xs">{reason}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate hidden md:table-cell">{finalRemarks}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{format(new Date(a.updated_at), "dd MMM")}</TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
-      {/* Create Agreement Dialog */}
-      <Dialog open={createOpen} onOpenChange={open => { if (!open) { setCreateOpen(false); resetForm(); } }}>
+      {/* Send Agreement Dialog */}
+      <Dialog open={sendOpen} onOpenChange={open => { if (!open) { setSendOpen(false); resetSendForm(); } }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>New Agreement</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Send Agreement</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-2">
 
-            {/* Fresh Prospect Selection */}
-            {freshMode && !selectedOrderId && (
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Select Prospect *</Label>
-                <Select value={selectedProspectId} onValueChange={setSelectedProspectId}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Choose a prospect..." /></SelectTrigger>
+            {/* Client info summary */}
+            {sendOrderId && (() => {
+              const lead = getLeadForOrder(sendOrderId);
+              if (!lead) return null;
+              return (
+                <div className="bg-muted/50 p-3 rounded-md text-xs grid grid-cols-2 gap-1">
+                  <span><strong>Client:</strong> {lead.client_name}</span>
+                  <span><strong>Pincode:</strong> {lead.pincode}</span>
+                  {lead.purchase_manager_name && <span><strong>PM:</strong> {lead.purchase_manager_name}</span>}
+                  {lead.contact_number && <span><strong>Phone:</strong> {lead.contact_number}</span>}
+                </div>
+              );
+            })()}
+
+            {/* Section 1: Quality Feedback */}
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Quality Feedback</p>
+              <div className="space-y-1">
+                <Label className="text-xs">Feedback *</Label>
+                <RadioGroup value={feedback} onValueChange={v => setFeedback(v as any)} className="flex gap-4">
+                  <div className="flex items-center gap-1.5">
+                    <RadioGroupItem value="positive" id="fb-pos" />
+                    <Label htmlFor="fb-pos" className="text-xs cursor-pointer">Positive</Label>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <RadioGroupItem value="negative" id="fb-neg" />
+                    <Label htmlFor="fb-neg" className="text-xs cursor-pointer">Negative</Label>
+                  </div>
+                </RadioGroup>
+                <FieldError msg={errors.feedback} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Feedback Remarks</Label>
+                <Textarea value={feedbackRemarks} onChange={e => setFeedbackRemarks(e.target.value)} className="text-xs min-h-[60px]" placeholder="Optional quality remarks..." />
+              </div>
+            </div>
+
+            {/* Section 2: Agreement Details */}
+            <div className="space-y-4 border-t pt-4">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Commercial Terms</p>
+
+              <div className="space-y-1">
+                <Label className="text-xs">Pricing Type *</Label>
+                <RadioGroup value={pricingType} onValueChange={setPricingType} className="flex flex-wrap gap-3">
+                  {["Weekly", "Monthly", "Quarterly", "Annual"].map(v => (
+                    <div key={v} className="flex items-center gap-1.5">
+                      <RadioGroupItem value={v.toLowerCase()} id={`pt-${v}`} />
+                      <Label htmlFor={`pt-${v}`} className="text-xs cursor-pointer">{v}</Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+                <FieldError msg={errors.pricingType} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Agreed Price per Kg (₹) *</Label>
+                  <Input type="number" value={agreedPrice} onChange={e => setAgreedPrice(e.target.value)} className="h-8 text-xs" placeholder="e.g. 150" />
+                  {marginWarning && agreedPrice && (
+                    <Badge variant="outline" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 text-[10px]">
+                      <AlertTriangle className="w-3 h-3 mr-1" /> Margin outside 90-100 Rs/kg range
+                    </Badge>
+                  )}
+                  <FieldError msg={errors.agreedPrice} />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs">Payment Type *</Label>
+                <RadioGroup value={paymentType} onValueChange={setPaymentType} className="flex gap-4">
+                  <div className="flex items-center gap-1.5">
+                    <RadioGroupItem value="cash_and_carry" id="pay-cash" />
+                    <Label htmlFor="pay-cash" className="text-xs cursor-pointer">Cash and Carry</Label>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <RadioGroupItem value="credit" id="pay-credit" />
+                    <Label htmlFor="pay-credit" className="text-xs cursor-pointer">Credit</Label>
+                  </div>
+                </RadioGroup>
+                <FieldError msg={errors.paymentType} />
+              </div>
+
+              {paymentType === "credit" && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Credit Days *</Label>
+                  <Input type="number" value={creditDays} onChange={e => setCreditDays(e.target.value)} className="h-8 text-xs w-32" placeholder="e.g. 30" />
+                  <FieldError msg={errors.creditDays} />
+                </div>
+              )}
+            </div>
+
+            {/* Operational Details */}
+            <div className="space-y-3 border-t pt-4">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Operational Details</p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Outlets in Bangalore *</Label>
+                  <Input type="number" value={outletsInBangalore} onChange={e => setOutletsInBangalore(e.target.value)} className="h-8 text-xs" />
+                  <FieldError msg={errors.outletsInBangalore} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Other Cities (comma-separated)</Label>
+                  <Input value={otherCities} onChange={e => setOtherCities(e.target.value)} className="h-8 text-xs" placeholder="Mumbai, Delhi" />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs">Delivery Slot *</Label>
+                <RadioGroup value={deliverySlot} onValueChange={setDeliverySlot} className="flex gap-4">
+                  <div className="flex items-center gap-1.5">
+                    <RadioGroupItem value="9am-12pm" id="slot-am" />
+                    <Label htmlFor="slot-am" className="text-xs cursor-pointer">9 AM–12 PM</Label>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <RadioGroupItem value="12pm-3pm" id="slot-pm" />
+                    <Label htmlFor="slot-pm" className="text-xs cursor-pointer">12 PM–3 PM</Label>
+                  </div>
+                </RadioGroup>
+                <FieldError msg={errors.deliverySlot} />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs">Distribution Partner *</Label>
+                <Select value={distributionPartner} onValueChange={setDistributionPartner}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select partner" /></SelectTrigger>
                   <SelectContent>
-                    {prospects.filter(p => p.status === "available").map(p => (
-                      <SelectItem key={p.id} value={p.id} className="text-xs">
-                        {p.restaurant_name} — {p.locality}, {p.pincode}
-                      </SelectItem>
+                    {partners.map(p => (
+                      <SelectItem key={p.id} value={p.name}>{p.name} — {p.area_coverage}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedProspectId && (
-                  <Card className="bg-muted/50">
-                    <CardContent className="p-3 space-y-1 text-xs">
-                      <p className="font-medium text-muted-foreground">Prospect Info</p>
-                      {(() => {
-                        const sp = prospects.find(p => p.id === selectedProspectId);
-                        return sp ? (
-                          <div className="grid grid-cols-2 gap-1">
-                            <span>Name: {sp.restaurant_name}</span>
-                            <span>Pincode: {sp.pincode}</span>
-                            <span>Locality: {sp.locality}</span>
-                            <span>Source: {sp.source || "—"}</span>
-                          </div>
-                        ) : null;
-                      })()}
-                    </CardContent>
-                  </Card>
-                )}
+                <FieldError msg={errors.distributionPartner} />
               </div>
-            )}
 
-            {/* Pre-filled Summary */}
-            {selectedOrder && selectedLead && !freshMode && (
-              <Card className="bg-muted/50">
-                <CardContent className="p-3 space-y-1 text-xs">
-                  <p className="font-medium text-muted-foreground">Sample Order Summary</p>
-                  <div className="grid grid-cols-2 gap-1">
-                    <span>Client: {selectedLead.client_name}</span>
-                    <span>Pincode: {selectedLead.pincode}</span>
-                    <span>PM: {selectedLead.purchase_manager_name || "—"}</span>
-                    <span>Qty: {selectedOrder.sample_qty_units || "—"} units</span>
-                    <span>Delivery: {selectedOrder.delivery_date ? format(new Date(selectedOrder.delivery_date), "dd MMM yyyy") : "—"}</span>
-                    <span>Demand: {selectedOrder.demand_per_week_kg || "—"} kg/wk</span>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Quality Rating */}
-            {(selectedOrderId || (freshMode && selectedProspectId)) && (
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Overall Quality Rating (1-10) *</Label>
-                <StarRating value={rating} onChange={setRating} />
-                {rating > 0 && <p className="text-xs text-muted-foreground">Rating: {rating}/10</p>}
-                <FieldError msg={errors.rating} />
-              </div>
-            )}
-
-            {/* Low rating - quality remarks + revisit scheduler */}
-            {rating > 0 && rating < 6 && (
-              <div className="space-y-3 p-3 border border-warning/30 rounded-md bg-warning/5">
-                <Label className="text-xs font-medium flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3 text-warning" /> Quality Feedback Remarks *
-                </Label>
-                <Textarea value={qualityRemarks} onChange={e => setQualityRemarks(e.target.value)} placeholder="Describe quality issues..." className="text-xs min-h-[80px]" />
-                <FieldError msg={errors.qualityRemarks} />
-
-                <div className="border-t border-warning/20 pt-3 space-y-2">
-                  <Label className="text-xs font-medium flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-warning" /> Schedule Revisit *
-                  </Label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground">Date</Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" className={cn("h-8 text-xs w-full justify-start", !lowRatingRevisitDate && "text-muted-foreground")}>
-                            <CalendarIcon className="w-3 h-3 mr-1" />
-                            {lowRatingRevisitDate ? format(lowRatingRevisitDate, "dd MMM yyyy") : "Pick date"}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar mode="single" selected={lowRatingRevisitDate} onSelect={setLowRatingRevisitDate} initialFocus className="p-3 pointer-events-auto" />
-                        </PopoverContent>
-                      </Popover>
-                      <FieldError msg={errors.lowRatingRevisitDate} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground">Time</Label>
-                      <Input type="time" value={lowRatingRevisitTime} onChange={e => setLowRatingRevisitTime(e.target.value)} className="h-8 text-xs" />
-                    </div>
-                  </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Expected First Order Date *</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className={cn("h-8 text-xs w-full justify-start", !expectedFirstOrder && "text-muted-foreground")}>
+                        <CalendarIcon className="w-3 h-3 mr-1" />
+                        {expectedFirstOrder ? format(expectedFirstOrder, "dd MMM yyyy") : "Pick date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={expectedFirstOrder} onSelect={setExpectedFirstOrder} initialFocus className="p-3 pointer-events-auto" />
+                    </PopoverContent>
+                  </Popover>
+                  <FieldError msg={errors.expectedFirstOrder} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Expected Weekly Volume (kg) *</Label>
+                  <Input type="number" value={expectedWeeklyVolume} onChange={e => setExpectedWeeklyVolume(e.target.value)} className="h-8 text-xs" />
+                  <FieldError msg={errors.expectedWeeklyVolume} />
                 </div>
               </div>
-            )}
-
-            {/* Agreement Section - only if rating >= 6 */}
-            {rating >= 6 && (
-              <div className="space-y-4 border-t pt-4">
-                <h3 className="text-sm font-semibold">Agreement Details</h3>
-
-                {/* Commercial Terms */}
-                <div className="space-y-3">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Commercial Terms</p>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs">Pricing Type *</Label>
-                    <RadioGroup value={pricingType} onValueChange={setPricingType} className="flex flex-wrap gap-3">
-                      {["Weekly", "Monthly", "Quarterly", "Annual"].map(v => (
-                        <div key={v} className="flex items-center gap-1.5">
-                          <RadioGroupItem value={v.toLowerCase()} id={`pt-${v}`} />
-                          <Label htmlFor={`pt-${v}`} className="text-xs cursor-pointer">{v}</Label>
-                        </div>
-                      ))}
-                    </RadioGroup>
-                    <FieldError msg={errors.pricingType} />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Agreed Price per Kg (₹) *</Label>
-                      <Input type="number" value={agreedPrice} onChange={e => setAgreedPrice(e.target.value)} className="h-8 text-xs" placeholder="e.g. 150" />
-                      {marginWarning && agreedPrice && (
-                        <Badge variant="outline" className="bg-warning/10 text-warning text-[10px]">
-                          <AlertTriangle className="w-3 h-3 mr-1" /> Margin outside 90-100 Rs/kg range
-                        </Badge>
-                      )}
-                      <FieldError msg={errors.agreedPrice} />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs">Payment Type *</Label>
-                    <RadioGroup value={paymentType} onValueChange={setPaymentType} className="flex gap-4">
-                      <div className="flex items-center gap-1.5">
-                        <RadioGroupItem value="cash_and_carry" id="pay-cash" />
-                        <Label htmlFor="pay-cash" className="text-xs cursor-pointer">Cash and Carry</Label>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <RadioGroupItem value="credit" id="pay-credit" />
-                        <Label htmlFor="pay-credit" className="text-xs cursor-pointer">Credit</Label>
-                      </div>
-                    </RadioGroup>
-                    <FieldError msg={errors.paymentType} />
-                  </div>
-
-                  {paymentType === "credit" && (
-                    <div className="space-y-1">
-                      <Label className="text-xs">Credit Days *</Label>
-                      <Input type="number" value={creditDays} onChange={e => setCreditDays(e.target.value)} className="h-8 text-xs w-32" placeholder="e.g. 30" />
-                      <FieldError msg={errors.creditDays} />
-                    </div>
-                  )}
-                </div>
-
-                {/* Operational Details */}
-                <div className="space-y-3">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Operational Details</p>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Outlets in Bangalore *</Label>
-                      <Input type="number" value={outletsInBangalore} onChange={e => setOutletsInBangalore(e.target.value)} className="h-8 text-xs" />
-                      <FieldError msg={errors.outletsInBangalore} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Other Cities (comma-separated)</Label>
-                      <Input value={otherCities} onChange={e => setOtherCities(e.target.value)} className="h-8 text-xs" placeholder="Mumbai, Delhi" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs">Delivery Slot *</Label>
-                    <RadioGroup value={deliverySlot} onValueChange={setDeliverySlot} className="flex gap-4">
-                      <div className="flex items-center gap-1.5">
-                        <RadioGroupItem value="9am-12pm" id="slot-am" />
-                        <Label htmlFor="slot-am" className="text-xs cursor-pointer">9 AM–12 PM</Label>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <RadioGroupItem value="12pm-3pm" id="slot-pm" />
-                        <Label htmlFor="slot-pm" className="text-xs cursor-pointer">12 PM–3 PM</Label>
-                      </div>
-                    </RadioGroup>
-                    <FieldError msg={errors.deliverySlot} />
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs">Distribution Partner *</Label>
-                    <Select value={distributionPartner} onValueChange={setDistributionPartner}>
-                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select partner" /></SelectTrigger>
-                      <SelectContent>
-                        {partners.map(p => (
-                          <SelectItem key={p.id} value={p.name}>{p.name} — {p.area_coverage}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FieldError msg={errors.distributionPartner} />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Expected First Order Date *</Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" className="h-8 text-xs w-full justify-start">
-                            <CalendarIcon className="w-3 h-3 mr-1" />
-                            {expectedFirstOrder ? format(expectedFirstOrder, "dd MMM yyyy") : "Pick date"}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar mode="single" selected={expectedFirstOrder} onSelect={setExpectedFirstOrder} initialFocus />
-                        </PopoverContent>
-                      </Popover>
-                      <FieldError msg={errors.expectedFirstOrder} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Expected Weekly Volume (kg) *</Label>
-                      <Input type="number" value={expectedWeeklyVolume} onChange={e => setExpectedWeeklyVolume(e.target.value)} className="h-8 text-xs" />
-                      <FieldError msg={errors.expectedWeeklyVolume} />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Additional */}
-                <div className="space-y-3">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Additional</p>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs">Other SKUs Interest</Label>
-                    <div className="flex flex-wrap gap-3">
-                      {otherSkuOptions.map(sku => (
-                        <div key={sku} className="flex items-center gap-1.5">
-                          <Checkbox
-                            id={`sku-${sku}`}
-                            checked={selectedSkus.includes(sku)}
-                            onCheckedChange={checked => {
-                              setSelectedSkus(prev => checked ? [...prev, sku] : prev.filter(s => s !== sku));
-                            }}
-                          />
-                          <Label htmlFor={`sku-${sku}`} className="text-xs cursor-pointer">{sku}</Label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs">Mail ID *</Label>
-                    <Input type="email" value={mailId} onChange={e => setMailId(e.target.value)} className="h-8 text-xs" placeholder="client@example.com" />
-                    <FieldError msg={errors.mailId} />
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs">KAM Remarks</Label>
-                    <Textarea value={kamRemarks} onChange={e => setKamRemarks(e.target.value)} className="text-xs min-h-[60px]" placeholder="Any additional notes..." />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="gap-2">
-            {rating > 0 && rating < 6 && (selectedOrderId || (freshMode && selectedProspectId)) && (
-              <Button size="sm" className="text-xs" onClick={handleSave}>
-                <Send className="w-3 h-3 mr-1" /> Save Feedback & Schedule Revisit
-              </Button>
-            )}
-            {rating >= 6 && (selectedOrderId || (freshMode && selectedProspectId)) && (
-              <Button size="sm" className="text-xs" onClick={handleSave}>
-                <Send className="w-3 h-3 mr-1" /> Save & Send Agreement
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Drop Dialog */}
-      <Dialog open={!!dropAgreementId} onOpenChange={open => { if (!open) { setDropAgreementId(null); setDropReason(""); setDropRemarks(""); } }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Drop Lead</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label className="text-xs font-medium">Reason *</Label>
-              <RadioGroup value={dropReason} onValueChange={setDropReason} className="grid gap-2">
-                {dropReasons.map(r => (
-                  <div key={r} className="flex items-center gap-2">
-                    <RadioGroupItem value={r} id={`drop-${r}`} />
-                    <Label htmlFor={`drop-${r}`} className="text-xs cursor-pointer">{r}</Label>
-                  </div>
-                ))}
-              </RadioGroup>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-medium">Final Remarks *</Label>
-              <Textarea value={dropRemarks} onChange={e => setDropRemarks(e.target.value)} className="text-xs min-h-[60px]" />
+
+            {/* Additional */}
+            <div className="space-y-3 border-t pt-4">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Additional</p>
+
+              <div className="space-y-1">
+                <Label className="text-xs">Other SKUs Interest</Label>
+                <div className="flex flex-wrap gap-3">
+                  {otherSkuOptions.map(sku => (
+                    <div key={sku} className="flex items-center gap-1.5">
+                      <Checkbox
+                        id={`sku-${sku}`}
+                        checked={selectedSkus.includes(sku)}
+                        onCheckedChange={checked => {
+                          setSelectedSkus(prev => checked ? [...prev, sku] : prev.filter(s => s !== sku));
+                        }}
+                      />
+                      <Label htmlFor={`sku-${sku}`} className="text-xs cursor-pointer">{sku}</Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs">Mail ID *</Label>
+                <Input type="email" value={mailId} onChange={e => setMailId(e.target.value)} className="h-8 text-xs" placeholder="client@example.com" />
+                <FieldError msg={errors.mailId} />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs">KAM Remarks</Label>
+                <Textarea value={kamRemarks} onChange={e => setKamRemarks(e.target.value)} className="text-xs min-h-[60px]" placeholder="Any additional notes..." />
+              </div>
             </div>
           </div>
+
           <DialogFooter>
-            <Button size="sm" variant="destructive" className="text-xs" onClick={handleDrop} disabled={!dropReason || !dropRemarks.trim()}>
-              Confirm Drop
+            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+            <Button size="sm" className="text-xs" onClick={handleSendAgreement}>
+              <Send className="w-3 h-3 mr-1" /> Save & Send Agreement
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Revisit Dialog */}
-      <Dialog open={!!revisitAgreementId} onOpenChange={open => { if (!open) { setRevisitAgreementId(null); setRevisitDate(undefined); setRevisitRemarks(""); setRevisitTime(""); } }}>
+      {/* Schedule Revisit Dialog */}
+      <Dialog open={revisitOpen} onOpenChange={open => { if (!open) { setRevisitOpen(false); } }}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Schedule Re-visit</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Schedule Revisit</DialogTitle></DialogHeader>
           <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Feedback *</Label>
+              <RadioGroup value={revisitFeedback} onValueChange={v => setRevisitFeedback(v as any)} className="flex gap-4">
+                <div className="flex items-center gap-1.5">
+                  <RadioGroupItem value="positive" id="rv-fb-pos" />
+                  <Label htmlFor="rv-fb-pos" className="text-xs cursor-pointer">Positive</Label>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <RadioGroupItem value="negative" id="rv-fb-neg" />
+                  <Label htmlFor="rv-fb-neg" className="text-xs cursor-pointer">Negative</Label>
+                </div>
+              </RadioGroup>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Feedback Remarks</Label>
+              <Textarea value={revisitFeedbackRemarks} onChange={e => setRevisitFeedbackRemarks(e.target.value)} className="text-xs min-h-[50px]" placeholder="Optional..." />
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs font-medium">Re-visit Date *</Label>
+                <Label className="text-xs">Revisit Date *</Label>
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" className="h-8 text-xs w-full justify-start">
+                    <Button variant="outline" className={cn("h-8 text-xs w-full justify-start", !revisitDate && "text-muted-foreground")}>
                       <CalendarIcon className="w-3 h-3 mr-1" />
                       {revisitDate ? format(revisitDate, "dd MMM yyyy") : "Pick date"}
                     </Button>
@@ -860,18 +903,57 @@ export default function AgreementsPage() {
                 </Popover>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs font-medium">Time</Label>
+                <Label className="text-xs">Time *</Label>
                 <Input type="time" value={revisitTime} onChange={e => setRevisitTime(e.target.value)} className="h-8 text-xs" />
               </div>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs font-medium">Remarks</Label>
-              <Textarea value={revisitRemarks} onChange={e => setRevisitRemarks(e.target.value)} className="text-xs min-h-[60px]" />
+              <Label className="text-xs">Remarks *</Label>
+              <Textarea value={revisitRemarks} onChange={e => setRevisitRemarks(e.target.value)} className="text-xs min-h-[60px]" placeholder="Revisit reason and plan..." />
             </div>
           </div>
           <DialogFooter>
-            <Button size="sm" className="text-xs" onClick={handleRevisit} disabled={!revisitDate}>
-              Schedule Re-visit
+            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+            <Button size="sm" onClick={handleScheduleRevisit} disabled={!revisitFeedback || !revisitDate || !revisitRemarks.trim()}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Not Interested Dialog */}
+      <Dialog open={dropOpen} onOpenChange={open => { if (!open) { setDropOpen(false); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Not Interested</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Reason *</Label>
+              <RadioGroup value={dropReason} onValueChange={setDropReason} className="grid gap-2">
+                {dropReasons.map(r => (
+                  <div key={r} className="flex items-center gap-2">
+                    <RadioGroupItem value={r} id={`drop4-${r}`} />
+                    <Label htmlFor={`drop4-${r}`} className="text-xs cursor-pointer">{r}</Label>
+                  </div>
+                ))}
+              </RadioGroup>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Final Remarks *</Label>
+              <Textarea value={dropRemarks} onChange={e => setDropRemarks(e.target.value)} className="text-xs min-h-[60px]" />
+            </div>
+            {dropOrderId && (() => {
+              const lead = getLeadForOrder(dropOrderId);
+              return lead ? (
+                <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                  Total Visits: <strong>{lead.visit_count || 0}</strong>
+                </div>
+              ) : null;
+            })()}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+            <Button size="sm" variant="destructive" onClick={handleNotInterested} disabled={!dropReason || !dropRemarks.trim()}>
+              Confirm
             </Button>
           </DialogFooter>
         </DialogContent>
