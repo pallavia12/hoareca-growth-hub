@@ -35,7 +35,7 @@ const navItems = [
 
 const adminItems = [
   { title: "Admin Dashboard", url: "/admin", icon: BarChart3 },
-  { title: "Backend Config", url: "/config", icon: Settings },
+  { title: "Analytics Dashboard", url: "/config", icon: Settings },
 ];
 
 
