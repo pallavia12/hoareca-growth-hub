@@ -90,12 +90,25 @@ export default function SampleOrdersPage() {
   const [followUpDate, setFollowUpDate] = useState<Date | undefined>();
   const [deliveryDate, setDeliveryDate] = useState<Date | undefined>();
 
-  // Qualified leads (have PM contact)
+  // Leads with existing sample orders (to exclude from qualified leads list)
+  const leadsWithOrders = useMemo(() => {
+    return new Set(orders.map(o => o.lead_id));
+  }, [orders]);
+
+  // Qualified leads without sample orders - shown in scheduled tab
+  const qualifiedLeadsWithoutOrders = useMemo(() => {
+    return leads.filter(l =>
+      (l.status === "qualified" || l.status === "in_progress") &&
+      !leadsWithOrders.has(l.id)
+    );
+  }, [leads, leadsWithOrders]);
+
+  // Qualified leads for the create dialog
   const qualifiedLeads = useMemo(() => {
     return leads.filter(l =>
       (l.status === "qualified" || l.status === "in_progress") &&
-      !leadSearch || l.client_name.toLowerCase().includes(leadSearch.toLowerCase()) ||
-      l.pincode.includes(leadSearch)
+      (!leadSearch || l.client_name.toLowerCase().includes(leadSearch.toLowerCase()) ||
+      l.pincode.includes(leadSearch))
     );
   }, [leads, leadSearch]);
 
@@ -118,25 +131,24 @@ export default function SampleOrdersPage() {
   }, [orders, leads]);
 
   const pincodes = useMemo(() => {
-    const set = new Set(ordersWithLeads.map(o => o.lead?.pincode).filter(Boolean) as string[]);
+    const set = new Set([
+      ...ordersWithLeads.map(o => o.lead?.pincode).filter(Boolean) as string[],
+      ...qualifiedLeadsWithoutOrders.map(l => l.pincode),
+    ]);
     return [...set].sort();
-  }, [ordersWithLeads]);
+  }, [ordersWithLeads, qualifiedLeadsWithoutOrders]);
 
   const filtered = useMemo(() => {
     return ordersWithLeads.filter(o => {
-      // Search
       if (search) {
         const s = search.toLowerCase();
         const name = o.lead?.client_name?.toLowerCase() || "";
         const pin = o.lead?.pincode || "";
         if (!name.includes(s) && !pin.includes(s)) return false;
       }
-      // Pincode
       if (filterPincode && filterPincode !== "all" && o.lead?.pincode !== filterPincode) return false;
-      // Status filter
       if (filterStatus && filterStatus !== "all" && o.status !== filterStatus) return false;
 
-      // Tab
       if (tab === "scheduled") return o.status === "pending_visit";
       if (tab === "completed") return o.status === "sample_ordered" || o.status === "visited";
       if (tab === "revisit") return o.status === "revisit_needed";
@@ -145,12 +157,24 @@ export default function SampleOrdersPage() {
     });
   }, [ordersWithLeads, search, filterPincode, filterStatus, tab]);
 
+  // Filtered qualified leads for scheduled tab
+  const filteredQualifiedForScheduled = useMemo(() => {
+    return qualifiedLeadsWithoutOrders.filter(l => {
+      if (search) {
+        const s = search.toLowerCase();
+        if (!l.client_name.toLowerCase().includes(s) && !l.pincode.includes(s)) return false;
+      }
+      if (filterPincode && filterPincode !== "all" && l.pincode !== filterPincode) return false;
+      return true;
+    });
+  }, [qualifiedLeadsWithoutOrders, search, filterPincode]);
+
   const counts = useMemo(() => ({
-    scheduled: ordersWithLeads.filter(o => o.status === "pending_visit").length,
+    scheduled: ordersWithLeads.filter(o => o.status === "pending_visit").length + qualifiedLeadsWithoutOrders.length,
     completed: ordersWithLeads.filter(o => o.status === "sample_ordered" || o.status === "visited").length,
     revisit: ordersWithLeads.filter(o => o.status === "revisit_needed").length,
     dropped: ordersWithLeads.filter(o => o.status === "dropped").length,
-  }), [ordersWithLeads]);
+  }), [ordersWithLeads, qualifiedLeadsWithoutOrders]);
 
   const resetForm = () => {
     setForm({ delivery_address: "", delivery_date: "", delivery_slot: "", sample_qty_units: "", demand_per_week_kg: "", remarks: "", visit_date: format(new Date(), "yyyy-MM-dd"), count_per_box: "", ripeness_stage: "", follow_up_date: "" });
@@ -280,78 +304,149 @@ export default function SampleOrdersPage() {
           </Select>
         </div>
 
-        {/* Cards */}
-        <TabsContent value={tab} className="mt-3">
+        <TabsContent value="scheduled" className="mt-3">
           {loading ? (
-            <div className="p-8 text-center text-muted-foreground text-sm">Loading sample orders...</div>
-          ) : filtered.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground text-sm">No sample orders found</div>
+            <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
+          ) : (filtered.length === 0 && filteredQualifiedForScheduled.length === 0) ? (
+            <div className="p-8 text-center text-muted-foreground text-sm">No scheduled items found</div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {filtered.map(o => (
-                <Card key={o.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-sm truncate">{o.lead?.client_name || "Unknown"}</p>
-                        <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                          <MapPin className="w-3 h-3 shrink-0" /> {o.lead?.locality || o.lead?.pincode || "—"}
-                        </p>
-                      </div>
-                      <Badge variant="outline" className={`text-[10px] shrink-0 ${statusColors[o.status] || ""}`}>
-                        {o.status.replace(/_/g, " ")}
-                      </Badge>
-                    </div>
+            <div className="space-y-4">
+              {/* Qualified Leads ready for sample order */}
+              {filteredQualifiedForScheduled.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Qualified Leads — Ready for Sample Order ({filteredQualifiedForScheduled.length})</p>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {filteredQualifiedForScheduled.map(l => (
+                      <Card key={l.id} className="hover:shadow-md transition-shadow border-l-4 border-l-success">
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm truncate">{l.client_name}</p>
+                              <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                                <MapPin className="w-3 h-3 shrink-0" /> {l.locality || l.pincode}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="text-[10px] shrink-0 bg-success/10 text-success border-success/20">
+                              qualified
+                            </Badge>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            {l.purchase_manager_name && (
+                              <span className="text-muted-foreground">PM: {l.purchase_manager_name}</span>
+                            )}
+                            {l.contact_number && (
+                              <span className="text-muted-foreground">📞 {l.contact_number}</span>
+                            )}
+                            {l.avocado_consumption && (
+                              <span className="text-muted-foreground">Usage: {l.avocado_consumption}</span>
+                            )}
+                            {l.estimated_monthly_spend && (
+                              <span className="text-muted-foreground">₹{l.estimated_monthly_spend}/mo</span>
+                            )}
+                          </div>
+                          {l.remarks && (
+                            <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{l.remarks}</p>
+                          )}
+                          <Button size="sm" className="w-full text-xs h-8" onClick={() => { resetForm(); handleSelectLead(l.id); setCreateOpen(true); }}>
+                            <Plus className="w-3 h-3 mr-1" /> Create Sample Order
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-                    {/* Sample order summary */}
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      {o.sample_qty_units && (
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          <Package className="w-3 h-3" /> {o.sample_qty_units} units
-                        </span>
-                      )}
-                      {o.delivery_date && (
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          <Truck className="w-3 h-3" /> {format(new Date(o.delivery_date), "dd MMM")}
-                        </span>
-                      )}
-                      {o.demand_per_week_kg && (
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          <Package className="w-3 h-3" /> {o.demand_per_week_kg} kg/wk
-                        </span>
-                      )}
-                      {o.visit_date && (
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          <Eye className="w-3 h-3" /> Visit: {format(new Date(o.visit_date), "dd MMM")}
-                        </span>
-                      )}
-                    </div>
-
-                    {o.delivery_address && (
-                      <p className="text-xs text-muted-foreground truncate">📍 {o.delivery_address}</p>
-                    )}
-
-                    {o.remarks && (
-                      <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{o.remarks}</p>
-                    )}
-
-                    {/* Actions */}
-                    {o.status !== "dropped" && o.status !== "sample_ordered" && (
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" className="text-xs flex-1 h-8" onClick={() => { setRevisitOrderId(o.id); }}>
-                          <RotateCcw className="w-3 h-3 mr-1" /> Re-visit
-                        </Button>
-                        <Button size="sm" variant="outline" className="text-xs flex-1 h-8 text-destructive" onClick={() => { setDropOrderId(o.id); }}>
-                          <XCircle className="w-3 h-3 mr-1" /> Drop
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
+              {/* Pending visit orders */}
+              {filtered.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Pending Visits ({filtered.length})</p>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {filtered.map(o => (
+                      <Card key={o.id} className="hover:shadow-md transition-shadow">
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm truncate">{o.lead?.client_name || "Unknown"}</p>
+                              <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                                <MapPin className="w-3 h-3 shrink-0" /> {o.lead?.locality || o.lead?.pincode || "—"}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className={`text-[10px] shrink-0 ${statusColors[o.status] || ""}`}>
+                              {o.status.replace(/_/g, " ")}
+                            </Badge>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            {o.sample_qty_units && <span className="flex items-center gap-1 text-muted-foreground"><Package className="w-3 h-3" /> {o.sample_qty_units} units</span>}
+                            {o.delivery_date && <span className="flex items-center gap-1 text-muted-foreground"><Truck className="w-3 h-3" /> {format(new Date(o.delivery_date), "dd MMM")}</span>}
+                          </div>
+                          {o.remarks && <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{o.remarks}</p>}
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" className="text-xs flex-1 h-8" onClick={() => setRevisitOrderId(o.id)}>
+                              <RotateCcw className="w-3 h-3 mr-1" /> Re-visit
+                            </Button>
+                            <Button size="sm" variant="outline" className="text-xs flex-1 h-8 text-destructive" onClick={() => setDropOrderId(o.id)}>
+                              <XCircle className="w-3 h-3 mr-1" /> Drop
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </TabsContent>
+
+        {/* Other tabs */}
+        {(["completed", "revisit", "dropped"] as const).map(t => (
+          <TabsContent key={t} value={t} className="mt-3">
+            {loading ? (
+              <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
+            ) : filtered.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground text-sm">No sample orders found</div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {filtered.map(o => (
+                  <Card key={o.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm truncate">{o.lead?.client_name || "Unknown"}</p>
+                          <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                            <MapPin className="w-3 h-3 shrink-0" /> {o.lead?.locality || o.lead?.pincode || "—"}
+                          </p>
+                        </div>
+                        <Badge variant="outline" className={`text-[10px] shrink-0 ${statusColors[o.status] || ""}`}>
+                          {o.status.replace(/_/g, " ")}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {o.sample_qty_units && <span className="flex items-center gap-1 text-muted-foreground"><Package className="w-3 h-3" /> {o.sample_qty_units} units</span>}
+                        {o.delivery_date && <span className="flex items-center gap-1 text-muted-foreground"><Truck className="w-3 h-3" /> {format(new Date(o.delivery_date), "dd MMM")}</span>}
+                        {o.demand_per_week_kg && <span className="flex items-center gap-1 text-muted-foreground"><Package className="w-3 h-3" /> {o.demand_per_week_kg} kg/wk</span>}
+                        {o.visit_date && <span className="flex items-center gap-1 text-muted-foreground"><Eye className="w-3 h-3" /> Visit: {format(new Date(o.visit_date), "dd MMM")}</span>}
+                      </div>
+                      {o.delivery_address && <p className="text-xs text-muted-foreground truncate">📍 {o.delivery_address}</p>}
+                      {o.remarks && <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{o.remarks}</p>}
+                      {o.status !== "dropped" && o.status !== "sample_ordered" && (
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" className="text-xs flex-1 h-8" onClick={() => setRevisitOrderId(o.id)}>
+                            <RotateCcw className="w-3 h-3 mr-1" /> Re-visit
+                          </Button>
+                          <Button size="sm" variant="outline" className="text-xs flex-1 h-8 text-destructive" onClick={() => setDropOrderId(o.id)}>
+                            <XCircle className="w-3 h-3 mr-1" /> Drop
+                          </Button>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        ))}
       </Tabs>
 
       {/* Create Sample Order Dialog */}
