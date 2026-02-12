@@ -11,16 +11,21 @@ export function useAgreements() {
 
   const fetchAgreements = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("agreements")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) {
-      console.error("Error fetching agreements:", error.message);
-    } else {
-      setAgreements(data || []);
+    try {
+      const { data, error } = await supabase
+        .from("agreements")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.error("Error fetching agreements:", error.message);
+      } else {
+        setAgreements(data || []);
+      }
+    } catch (e) {
+      console.error("Exception fetching agreements:", e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => { fetchAgreements(); }, [fetchAgreements]);
