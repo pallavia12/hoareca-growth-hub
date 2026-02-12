@@ -422,9 +422,6 @@ export default function AgreementsPage() {
       <Button size="sm" className="text-xs h-7" onClick={() => openSendAgreement(orderId, agreementId)}>
         <Send className="w-3 h-3 mr-1" /> Send Agreement
       </Button>
-      <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openScheduleRevisit(orderId, agreementId)}>
-        <RotateCcw className="w-3 h-3 mr-1" /> Revisit
-      </Button>
       <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => openNotInterested(orderId, agreementId)}>
         <XCircle className="w-3 h-3 mr-1" /> Not Interested
       </Button>
@@ -875,11 +872,19 @@ export default function AgreementsPage() {
             </div>
           </div>
 
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" className="text-xs" onClick={handleSendAgreement}>
-              <Send className="w-3 h-3 mr-1" /> Save & Send Agreement
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" size="sm" className="text-xs" onClick={() => {
+              setSendOpen(false);
+              openScheduleRevisit(sendOrderId!, sendAgreementId);
+            }}>
+              <RotateCcw className="w-3 h-3 mr-1" /> Schedule Revisit
             </Button>
+            <div className="flex gap-2">
+              <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+              <Button size="sm" className="text-xs" onClick={handleSendAgreement}>
+                <Send className="w-3 h-3 mr-1" /> Save & Send Agreement
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

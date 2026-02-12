@@ -12,9 +12,6 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import {
-  Popover, PopoverContent, PopoverTrigger,
-} from "@/components/ui/popover";
-import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
@@ -26,10 +23,12 @@ import { useProspects } from "@/hooks/useProspects";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Plus, Search, MapPin, CalendarIcon, PhoneCall, Eye, Clock,
+  Plus, Search, CalendarIcon,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import MapPinPicker from "@/components/MapPinPicker";
+import PhotoCapture from "@/components/PhotoCapture";
 
 const tagColors: Record<string, string> = {
   New: "bg-info/10 text-info border-info/20",
@@ -49,25 +48,27 @@ export default function LeadsPage() {
   const [search, setSearch] = useState("");
   const [filterLocality, setFilterLocality] = useState("");
 
-  // Create Lead dialog
   const [createLeadOpen, setCreateLeadOpen] = useState(false);
   const [createLeadProspectId, setCreateLeadProspectId] = useState<string | null>(null);
 
-  // Log Unsuccessful dialog
   const [unsuccessfulOpen, setUnsuccessfulOpen] = useState(false);
   const [unsuccessfulProspectId, setUnsuccessfulProspectId] = useState<string | null>(null);
   const [unsuccessfulReason, setUnsuccessfulReason] = useState("");
   const [unsuccessfulRemarks, setUnsuccessfulRemarks] = useState("");
 
-  // Save as Incomplete sub-dialog
   const [incompleteOpen, setIncompleteOpen] = useState(false);
   const [revisitDate, setRevisitDate] = useState<Date | undefined>();
   const [revisitTime, setRevisitTime] = useState("");
 
-  // Add New Lead (no pre-fill)
   const [addNewLeadOpen, setAddNewLeadOpen] = useState(false);
 
-  // Lead form
+  // Map pin state
+  const [pinLat, setPinLat] = useState<number | null>(null);
+  const [pinLng, setPinLng] = useState<number | null>(null);
+
+  // Photo state (optional in Step 2)
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+
   const [form, setForm] = useState({
     client_name: "", outlet_address: "", pincode: "", locality: "",
     contact_number: "", gst_id: "",
@@ -88,9 +89,11 @@ export default function LeadsPage() {
       appointment_date: "", appointment_time: "",
       remarks: "",
     });
+    setPinLat(null);
+    setPinLng(null);
+    setPhotoUrl(null);
   };
 
-  // Filter prospects assigned to current user
   const myProspects = useMemo(() => {
     return prospects.filter(p => p.mapped_to === user?.email && p.status === "assigned");
   }, [prospects, user]);
@@ -133,7 +136,6 @@ export default function LeadsPage() {
     dropouts: myProspects.filter(p => p.tag === "Dropped").length,
   }), [myProspects]);
 
-  // Helper: get the lead associated with a prospect to read call/visit counts
   const getLeadForProspect = (prospectId: string) => {
     return leads.find(l => l.prospect_id === prospectId);
   };
@@ -149,6 +151,10 @@ export default function LeadsPage() {
         pincode: p.pincode,
         locality: p.locality,
       }));
+      if (p.geo_lat && p.geo_lng) {
+        setPinLat(Number(p.geo_lat));
+        setPinLng(Number(p.geo_lng));
+      }
     }
     setCreateLeadProspectId(prospectId);
     setCreateLeadOpen(true);
@@ -168,8 +174,6 @@ export default function LeadsPage() {
   const handleSaveLead = async () => {
     if (!form.client_name || !form.pincode) return;
     const field = getIncrementField();
-
-    // Check if there's an existing lead for this prospect to increment
     const existingLead = createLeadProspectId ? getLeadForProspect(createLeadProspectId) : null;
     const currentCount = existingLead ? ((existingLead as any)[field] || 0) : 0;
 
@@ -193,6 +197,9 @@ export default function LeadsPage() {
       prospect_id: createLeadProspectId || null,
       created_by: user?.email || null,
       status: "qualified",
+      geo_lat: pinLat,
+      geo_lng: pinLng,
+      outlet_photo_url: photoUrl,
       call_count: field === "call_count" ? currentCount + 1 : (existingLead?.call_count || 0),
       visit_count: field === "visit_count" ? currentCount + 1 : (existingLead?.visit_count || 0),
     });
@@ -235,6 +242,9 @@ export default function LeadsPage() {
       prospect_id: createLeadProspectId || null,
       created_by: user?.email || null,
       status: "in_progress",
+      geo_lat: pinLat,
+      geo_lng: pinLng,
+      outlet_photo_url: photoUrl,
       call_count: field === "call_count" ? currentCount + 1 : (existingLead?.call_count || 0),
       visit_count: field === "visit_count" ? currentCount + 1 : (existingLead?.visit_count || 0),
     });
@@ -258,7 +268,6 @@ export default function LeadsPage() {
     const isDrop = unsuccessfulReason === "Drop";
     const newTag = isDrop ? "Dropped" : "Rescheduled";
 
-    // Increment call/visit count on the associated lead
     const existingLead = getLeadForProspect(unsuccessfulProspectId);
     if (existingLead) {
       const field = getIncrementField();
@@ -275,7 +284,6 @@ export default function LeadsPage() {
 
   const loading = prospectsLoading || leadsLoading;
 
-  // Lead form (shared)
   const renderLeadForm = () => (
     <div className="grid gap-4 py-2 max-h-[60vh] overflow-y-auto">
       {/* Section 1: Basic Info */}
@@ -284,10 +292,6 @@ export default function LeadsPage() {
         <div className="space-y-1">
           <Label className="text-xs">Name *</Label>
           <Input placeholder="Restaurant name" value={form.client_name} onChange={e => setForm(f => ({ ...f, client_name: e.target.value }))} />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Location *</Label>
-          <Input placeholder="Full address" value={form.outlet_address} onChange={e => setForm(f => ({ ...f, outlet_address: e.target.value }))} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
@@ -299,11 +303,18 @@ export default function LeadsPage() {
             <Input placeholder="+91..." value={form.contact_number} onChange={e => setForm(f => ({ ...f, contact_number: e.target.value }))} />
           </div>
         </div>
+
+        {/* Map Pin Picker instead of text address */}
+        <MapPinPicker lat={pinLat} lng={pinLng} onLocationSelect={(lat, lng) => { setPinLat(lat); setPinLng(lng); }} />
+
         <div className="space-y-1">
           <Label className="text-xs">GST ID</Label>
           <Input placeholder="Optional" value={form.gst_id} onChange={e => setForm(f => ({ ...f, gst_id: e.target.value }))} />
         </div>
       </div>
+
+      {/* Photo Capture (optional in Step 2) */}
+      <PhotoCapture label="Outlet Photo" required={false} value={photoUrl} onCapture={setPhotoUrl} />
 
       {/* Section 2: Contact Details */}
       <div className="space-y-3">
@@ -426,9 +437,7 @@ export default function LeadsPage() {
         <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
         <TableCell className="text-xs font-mono hidden sm:table-cell">{p.pincode}</TableCell>
         {tab === "revisit" && (
-          <TableCell className="text-xs text-muted-foreground">
-            {callCount + visitCount}
-          </TableCell>
+          <TableCell className="text-xs text-muted-foreground">{callCount + visitCount}</TableCell>
         )}
         <TableCell>
           {showActions ? (
@@ -451,7 +460,6 @@ export default function LeadsPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-foreground">Step 2: Lead Generation</h1>
@@ -460,7 +468,6 @@ export default function LeadsPage() {
         <Button size="sm" onClick={openAddNewLead}><Plus className="w-4 h-4 mr-1" /> Add New Lead</Button>
       </div>
 
-      {/* Tabs */}
       <Tabs value={tab} onValueChange={v => setTab(v as any)}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="available" className="text-xs">Available Prospects ({counts.available})</TabsTrigger>
@@ -468,7 +475,6 @@ export default function LeadsPage() {
           <TabsTrigger value="dropouts" className="text-xs">Drop-outs ({counts.dropouts})</TabsTrigger>
         </TabsList>
 
-        {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-2 mt-3">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
@@ -483,126 +489,92 @@ export default function LeadsPage() {
           </Select>
         </div>
 
-        {/* Available Prospects Tab */}
+        {/* Available */}
         <TabsContent value="available" className="mt-3">
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-xs">Name</TableHead>
-                      <TableHead className="text-xs">Locality</TableHead>
-                      <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
-                      <TableHead className="text-xs">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loading ? (
-                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
-                    ) : availableProspects.length === 0 ? (
-                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No available prospects assigned to you.</TableCell></TableRow>
-                    ) : (
-                      availableProspects.map(p => renderProspectRow(p, true))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+          <Card><CardContent className="p-0"><div className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead className="text-xs">Name</TableHead>
+                <TableHead className="text-xs">Locality</TableHead>
+                <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
+                <TableHead className="text-xs">Actions</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                ) : availableProspects.length === 0 ? (
+                  <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No available prospects assigned to you.</TableCell></TableRow>
+                ) : availableProspects.map(p => renderProspectRow(p, true))}
+              </TableBody>
+            </Table>
+          </div></CardContent></Card>
         </TabsContent>
 
-        {/* Revisit Tab */}
+        {/* Revisit */}
         <TabsContent value="revisit" className="mt-3">
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-xs">Name</TableHead>
-                      <TableHead className="text-xs">Locality</TableHead>
-                      <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
-                      <TableHead className="text-xs">Attempts</TableHead>
-                      <TableHead className="text-xs">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loading ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
-                    ) : revisitProspects.length === 0 ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No prospects in revisit queue.</TableCell></TableRow>
-                    ) : (
-                      revisitProspects.map(p => renderProspectRow(p, true))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+          <Card><CardContent className="p-0"><div className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead className="text-xs">Name</TableHead>
+                <TableHead className="text-xs">Locality</TableHead>
+                <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
+                <TableHead className="text-xs">Attempts</TableHead>
+                <TableHead className="text-xs">Actions</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                ) : revisitProspects.length === 0 ? (
+                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No prospects in revisit queue.</TableCell></TableRow>
+                ) : revisitProspects.map(p => renderProspectRow(p, true))}
+              </TableBody>
+            </Table>
+          </div></CardContent></Card>
         </TabsContent>
 
-        {/* Drop-outs Tab */}
+        {/* Dropouts */}
         <TabsContent value="dropouts" className="mt-3">
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-xs">Name</TableHead>
-                      <TableHead className="text-xs">Locality</TableHead>
-                      <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
-                      <TableHead className="text-xs">Info</TableHead>
+          <Card><CardContent className="p-0"><div className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead className="text-xs">Name</TableHead>
+                <TableHead className="text-xs">Locality</TableHead>
+                <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
+                <TableHead className="text-xs">Info</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                ) : droppedProspects.length === 0 ? (
+                  <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No dropped prospects.</TableCell></TableRow>
+                ) : droppedProspects.map(p => {
+                  const lead = getLeadForProspect(p.id);
+                  const callCount = lead?.call_count || 0;
+                  const visitCount = lead?.visit_count || 0;
+                  return (
+                    <TableRow key={p.id} className="text-sm">
+                      <TableCell className="font-medium max-w-[180px] truncate">
+                        {p.restaurant_name}
+                        {(callCount > 0 || visitCount > 0) && (
+                          <div className="flex gap-1 mt-0.5">
+                            {callCount > 0 && <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/20">{callCount} {callCount === 1 ? "call" : "calls"}</Badge>}
+                            {visitCount > 0 && <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">{visitCount} {visitCount === 1 ? "visit" : "visits"}</Badge>}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
+                      <TableCell className="text-xs font-mono hidden sm:table-cell">{p.pincode}</TableCell>
+                      <TableCell><Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">Dropped</Badge></TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loading ? (
-                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
-                    ) : droppedProspects.length === 0 ? (
-                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No dropped prospects.</TableCell></TableRow>
-                    ) : (
-                      droppedProspects.map(p => {
-                        const lead = getLeadForProspect(p.id);
-                        const callCount = lead?.call_count || 0;
-                        const visitCount = lead?.visit_count || 0;
-                        return (
-                          <TableRow key={p.id} className="text-sm">
-                            <TableCell className="font-medium max-w-[180px] truncate">
-                              {p.restaurant_name}
-                              {(callCount > 0 || visitCount > 0) && (
-                                <div className="flex gap-1 mt-0.5">
-                                  {callCount > 0 && (
-                                    <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/20">
-                                      {callCount} {callCount === 1 ? "call" : "calls"}
-                                    </Badge>
-                                  )}
-                                  {visitCount > 0 && (
-                                    <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">
-                                      {visitCount} {visitCount === 1 ? "visit" : "visits"}
-                                    </Badge>
-                                  )}
-                                </div>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
-                            <TableCell className="text-xs font-mono hidden sm:table-cell">{p.pincode}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">Dropped</Badge>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div></CardContent></Card>
         </TabsContent>
       </Tabs>
 
-      {/* Create Lead Dialog (from prospect) */}
+      {/* Create Lead Dialog */}
       <Dialog open={createLeadOpen} onOpenChange={open => { if (!open) { setCreateLeadOpen(false); resetForm(); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Create Lead</DialogTitle></DialogHeader>
@@ -619,7 +591,7 @@ export default function LeadsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Add New Lead Dialog (no pre-fill) */}
+      {/* Add New Lead Dialog */}
       <Dialog open={addNewLeadOpen} onOpenChange={open => { if (!open) { setAddNewLeadOpen(false); resetForm(); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Add New Lead</DialogTitle></DialogHeader>
@@ -636,7 +608,7 @@ export default function LeadsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Save as Incomplete - Date/Time Picker */}
+      {/* Incomplete - Date/Time Picker */}
       <Dialog open={incompleteOpen} onOpenChange={setIncompleteOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle className="text-base">Schedule Re-visit</DialogTitle></DialogHeader>
@@ -656,7 +628,7 @@ export default function LeadsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Log Unsuccessful Attempt Dialog */}
+      {/* Log Unsuccessful */}
       <Dialog open={unsuccessfulOpen} onOpenChange={open => { if (!open) { setUnsuccessfulOpen(false); setUnsuccessfulProspectId(null); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle className="text-base">Log Unsuccessful Attempt</DialogTitle></DialogHeader>
@@ -664,22 +636,10 @@ export default function LeadsPage() {
             <div className="space-y-1">
               <Label className="text-xs">Reason *</Label>
               <RadioGroup value={unsuccessfulReason} onValueChange={setUnsuccessfulReason} className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="Not Connected" id="reason-1" />
-                  <Label htmlFor="reason-1" className="text-sm cursor-pointer">Not Connected</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="Connected - Call Later" id="reason-2" />
-                  <Label htmlFor="reason-2" className="text-sm cursor-pointer">Connected - Call Later</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="Connected - Not Interested" id="reason-3" />
-                  <Label htmlFor="reason-3" className="text-sm cursor-pointer">Connected - Not Interested</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="Drop" id="reason-4" />
-                  <Label htmlFor="reason-4" className="text-sm cursor-pointer">Drop</Label>
-                </div>
+                <div className="flex items-center space-x-2"><RadioGroupItem value="Not Connected" id="reason-1" /><Label htmlFor="reason-1" className="text-sm cursor-pointer">Not Connected</Label></div>
+                <div className="flex items-center space-x-2"><RadioGroupItem value="Connected - Call Later" id="reason-2" /><Label htmlFor="reason-2" className="text-sm cursor-pointer">Connected - Call Later</Label></div>
+                <div className="flex items-center space-x-2"><RadioGroupItem value="Connected - Not Interested" id="reason-3" /><Label htmlFor="reason-3" className="text-sm cursor-pointer">Connected - Not Interested</Label></div>
+                <div className="flex items-center space-x-2"><RadioGroupItem value="Drop" id="reason-4" /><Label htmlFor="reason-4" className="text-sm cursor-pointer">Drop</Label></div>
               </RadioGroup>
             </div>
             <div className="space-y-1">

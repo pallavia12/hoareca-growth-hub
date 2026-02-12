@@ -29,6 +29,7 @@ import {
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import AvocadoBrochureCarousel from "@/components/AvocadoBrochureCarousel";
+import PhotoCapture from "@/components/PhotoCapture";
 
 const statusColors: Record<string, string> = {
   pending_visit: "bg-info/10 text-info border-info/20",
@@ -83,6 +84,7 @@ export default function SampleOrdersPage() {
     visit_date: format(new Date(), "yyyy-MM-dd"),
     count_per_box: "", ripeness_stage: "", follow_up_date: "",
   });
+  const [visitPhotoUrl, setVisitPhotoUrl] = useState<string | null>(null);
   const [followUpDate, setFollowUpDate] = useState<Date | undefined>();
   const [deliveryDate, setDeliveryDate] = useState<Date | undefined>();
 
@@ -92,6 +94,7 @@ export default function SampleOrdersPage() {
     setDeliveryDate(undefined);
     setLogVisitLeadId(null);
     setLogVisitOrderId(null);
+    setVisitPhotoUrl(null);
   };
 
   // Qualified leads for scheduled tab (no existing sample order)
@@ -199,7 +202,7 @@ export default function SampleOrdersPage() {
   };
 
   const handleBookSampleOrder = async () => {
-    if (!logVisitLeadId || !form.remarks || !followUpDate) return;
+    if (!logVisitLeadId || !form.remarks || !followUpDate || !visitPhotoUrl) return;
     const specNotes = [
       form.count_per_box && `Count/box: ${form.count_per_box}`,
       form.ripeness_stage && `Ripeness: ${form.ripeness_stage}`,
@@ -657,6 +660,9 @@ export default function SampleOrdersPage() {
               <Textarea placeholder="Visit observations, client feedback..." value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={3} />
             </div>
 
+            {/* Mandatory photo capture */}
+            <PhotoCapture label="Visit Photo" required={true} value={visitPhotoUrl} onCapture={setVisitPhotoUrl} />
+
             <div className="space-y-1">
               <Label className="text-xs">Next Follow-up Date *</Label>
               <Popover>
@@ -679,7 +685,7 @@ export default function SampleOrdersPage() {
             </Button>
             <div className="flex gap-2">
               <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-              <Button size="sm" onClick={handleBookSampleOrder} disabled={!logVisitLeadId || !form.remarks || !followUpDate}>
+              <Button size="sm" onClick={handleBookSampleOrder} disabled={!logVisitLeadId || !form.remarks || !followUpDate || !visitPhotoUrl}>
                 <Package className="w-3 h-3 mr-1" /> Book Sample Order
               </Button>
             </div>
