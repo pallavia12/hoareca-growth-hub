@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, lazy, Suspense } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-import MapPinPicker from "@/components/MapPinPicker";
+const MapPinPicker = lazy(() => import("@/components/MapPinPicker"));
 import PhotoCapture from "@/components/PhotoCapture";
 
 const tagColors: Record<string, string> = {
@@ -304,9 +304,11 @@ export default function LeadsPage() {
           </div>
         </div>
 
-        {/* Map Pin Picker instead of text address - only render when dialog is open to avoid react-leaflet crash */}
+        {/* Map Pin Picker - lazy loaded to avoid react-leaflet context crash in Radix Dialog */}
         {(createLeadOpen || addNewLeadOpen) && (
-          <MapPinPicker lat={pinLat} lng={pinLng} onLocationSelect={(lat, lng) => { setPinLat(lat); setPinLng(lng); }} />
+          <Suspense fallback={<div className="h-48 rounded-md border flex items-center justify-center text-xs text-muted-foreground">Loading map...</div>}>
+            <MapPinPicker lat={pinLat} lng={pinLng} onLocationSelect={(lat, lng) => { setPinLat(lat); setPinLng(lng); }} />
+          </Suspense>
         )}
 
         <div className="space-y-1">
