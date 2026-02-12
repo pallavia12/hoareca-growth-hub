@@ -12,11 +12,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Calendar } from "@/components/ui/calendar";
 import { useSampleOrders } from "@/hooks/useSampleOrders";
@@ -24,8 +24,7 @@ import { useLeads } from "@/hooks/useLeads";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Plus, Search, MapPin, CalendarIcon, ChevronDown, Package, Eye, Clock, Truck,
-  XCircle, RotateCcw, Camera,
+  Search, CalendarIcon, Package, Eye, Clock, XCircle, RotateCcw,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -42,216 +41,280 @@ const statusColors: Record<string, string> = {
 const dropReasons = [
   "Price concerns", "Quality concerns", "No immediate need", "Competition preferred", "Other",
 ];
-
 const countOptions = ["16", "18", "20", "22", "24"];
 const ripenessOptions = ["Ready-to-eat", "Hard", "Custom"];
 
 export default function SampleOrdersPage() {
   const { orders, loading, addOrder, updateOrder, refetch } = useSampleOrders();
-  const { leads } = useLeads();
+  const { leads, updateLead } = useLeads();
   const { user } = useAuth();
   const { toast } = useToast();
 
   const [tab, setTab] = useState<"scheduled" | "completed" | "revisit" | "dropped">("scheduled");
   const [search, setSearch] = useState("");
   const [filterPincode, setFilterPincode] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
 
-  // Create order dialog
-  const [createOpen, setCreateOpen] = useState(false);
-  const [leadSearch, setLeadSearch] = useState("");
-  const [selectedLeadId, setSelectedLeadId] = useState("");
+  // Log Visit dialog
+  const [logVisitOpen, setLogVisitOpen] = useState(false);
+  const [logVisitLeadId, setLogVisitLeadId] = useState<string | null>(null);
+  const [logVisitOrderId, setLogVisitOrderId] = useState<string | null>(null);
 
   // Drop dialog
+  const [dropOpen, setDropOpen] = useState(false);
+  const [dropLeadId, setDropLeadId] = useState<string | null>(null);
   const [dropOrderId, setDropOrderId] = useState<string | null>(null);
   const [dropReason, setDropReason] = useState("");
   const [dropRemarks, setDropRemarks] = useState("");
 
-  // Re-visit dialog
-  const [revisitOrderId, setRevisitOrderId] = useState<string | null>(null);
+  // Revisit sub-dialog
+  const [revisitSubOpen, setRevisitSubOpen] = useState(false);
   const [revisitDate, setRevisitDate] = useState<Date | undefined>();
+  const [revisitTime, setRevisitTime] = useState("");
   const [revisitRemarks, setRevisitRemarks] = useState("");
+
+  // Follow-up date filter for Completed tab
+  const [followUpFrom, setFollowUpFrom] = useState<Date | undefined>();
+  const [followUpTo, setFollowUpTo] = useState<Date | undefined>();
 
   // Form
   const [form, setForm] = useState({
-    delivery_address: "",
-    delivery_date: "",
-    delivery_slot: "",
-    sample_qty_units: "",
-    demand_per_week_kg: "",
-    remarks: "",
+    delivery_address: "", delivery_date: "", delivery_slot: "",
+    sample_qty_units: "", demand_per_week_kg: "", remarks: "",
     visit_date: format(new Date(), "yyyy-MM-dd"),
-    // Extra fields stored in remarks
-    count_per_box: "",
-    ripeness_stage: "",
-    follow_up_date: "",
+    count_per_box: "", ripeness_stage: "", follow_up_date: "",
   });
-
   const [followUpDate, setFollowUpDate] = useState<Date | undefined>();
   const [deliveryDate, setDeliveryDate] = useState<Date | undefined>();
 
-  // Leads with existing sample orders (to exclude from qualified leads list)
-  const leadsWithOrders = useMemo(() => {
-    return new Set(orders.map(o => o.lead_id));
-  }, [orders]);
+  const resetForm = () => {
+    setForm({ delivery_address: "", delivery_date: "", delivery_slot: "", sample_qty_units: "", demand_per_week_kg: "", remarks: "", visit_date: format(new Date(), "yyyy-MM-dd"), count_per_box: "", ripeness_stage: "", follow_up_date: "" });
+    setFollowUpDate(undefined);
+    setDeliveryDate(undefined);
+    setLogVisitLeadId(null);
+    setLogVisitOrderId(null);
+  };
 
-  // Qualified leads without sample orders - shown in scheduled tab
-  const qualifiedLeadsWithoutOrders = useMemo(() => {
-    return leads.filter(l =>
-      (l.status === "qualified" || l.status === "in_progress") &&
-      !leadsWithOrders.has(l.id)
-    );
-  }, [leads, leadsWithOrders]);
+  // Qualified leads for scheduled tab (no existing sample order)
+  const leadsWithOrders = useMemo(() => new Set(orders.map(o => o.lead_id)), [orders]);
+  const qualifiedLeads = useMemo(() =>
+    leads.filter(l => (l.status === "qualified" || l.status === "in_progress") && !leadsWithOrders.has(l.id)),
+    [leads, leadsWithOrders]
+  );
 
-  // Qualified leads for the create dialog
-  const qualifiedLeads = useMemo(() => {
-    return leads.filter(l =>
-      (l.status === "qualified" || l.status === "in_progress") &&
-      (!leadSearch || l.client_name.toLowerCase().includes(leadSearch.toLowerCase()) ||
-      l.pincode.includes(leadSearch))
-    );
-  }, [leads, leadSearch]);
+  const ordersWithLeads = useMemo(() =>
+    orders.map(o => ({ ...o, lead: leads.find(l => l.id === o.lead_id) })),
+    [orders, leads]
+  );
 
-  const filteredQualifiedLeads = useMemo(() => {
-    if (!leadSearch) return qualifiedLeads.slice(0, 10);
-    const s = leadSearch.toLowerCase();
-    return qualifiedLeads.filter(l =>
-      l.client_name.toLowerCase().includes(s) || l.pincode.includes(s) || (l.locality || "").toLowerCase().includes(s)
-    ).slice(0, 10);
-  }, [qualifiedLeads, leadSearch]);
+  // Scheduled: qualified leads + pending_visit orders
+  const scheduledLeads = useMemo(() => {
+    let list = qualifiedLeads;
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter(l => l.client_name.toLowerCase().includes(s) || l.pincode.includes(s));
+    }
+    if (filterPincode && filterPincode !== "all") list = list.filter(l => l.pincode === filterPincode);
+    return list;
+  }, [qualifiedLeads, search, filterPincode]);
 
-  const selectedLead = useMemo(() => leads.find(l => l.id === selectedLeadId), [leads, selectedLeadId]);
+  const scheduledOrders = useMemo(() => {
+    return ordersWithLeads.filter(o => {
+      if (o.status !== "pending_visit") return false;
+      if (search) {
+        const s = search.toLowerCase();
+        if (!(o.lead?.client_name || "").toLowerCase().includes(s) && !(o.lead?.pincode || "").includes(s)) return false;
+      }
+      if (filterPincode && filterPincode !== "all" && o.lead?.pincode !== filterPincode) return false;
+      return true;
+    });
+  }, [ordersWithLeads, search, filterPincode]);
 
-  // Map orders to leads for display
-  const ordersWithLeads = useMemo(() => {
-    return orders.map(o => ({
-      ...o,
-      lead: leads.find(l => l.id === o.lead_id),
-    }));
-  }, [orders, leads]);
+  const completedOrders = useMemo(() => {
+    return ordersWithLeads.filter(o => {
+      if (o.status !== "sample_ordered" && o.status !== "visited") return false;
+      if (search) {
+        const s = search.toLowerCase();
+        if (!(o.lead?.client_name || "").toLowerCase().includes(s)) return false;
+      }
+      if (filterPincode && filterPincode !== "all" && o.lead?.pincode !== filterPincode) return false;
+      // Follow-up date filter
+      if (followUpFrom || followUpTo) {
+        const fuMatch = o.remarks?.match(/Follow-up:\s*(\d{2}\s\w+\s\d{4})/);
+        if (!fuMatch) return false;
+        const fuDate = new Date(fuMatch[1]);
+        if (followUpFrom && fuDate < followUpFrom) return false;
+        if (followUpTo && fuDate > followUpTo) return false;
+      }
+      return true;
+    });
+  }, [ordersWithLeads, search, filterPincode, followUpFrom, followUpTo]);
+
+  const revisitOrders = useMemo(() => {
+    return ordersWithLeads.filter(o => {
+      if (o.status !== "revisit_needed") return false;
+      if (search) {
+        const s = search.toLowerCase();
+        if (!(o.lead?.client_name || "").toLowerCase().includes(s)) return false;
+      }
+      if (filterPincode && filterPincode !== "all" && o.lead?.pincode !== filterPincode) return false;
+      return true;
+    });
+  }, [ordersWithLeads, search, filterPincode]);
+
+  const droppedOrders = useMemo(() => {
+    return ordersWithLeads.filter(o => {
+      if (o.status !== "dropped") return false;
+      if (search) {
+        const s = search.toLowerCase();
+        if (!(o.lead?.client_name || "").toLowerCase().includes(s)) return false;
+      }
+      return true;
+    });
+  }, [ordersWithLeads, search]);
+
+  const counts = useMemo(() => ({
+    scheduled: scheduledLeads.length + scheduledOrders.length,
+    completed: completedOrders.length,
+    revisit: revisitOrders.length,
+    dropped: droppedOrders.length,
+  }), [scheduledLeads, scheduledOrders, completedOrders, revisitOrders, droppedOrders]);
 
   const pincodes = useMemo(() => {
     const set = new Set([
+      ...leads.map(l => l.pincode),
       ...ordersWithLeads.map(o => o.lead?.pincode).filter(Boolean) as string[],
-      ...qualifiedLeadsWithoutOrders.map(l => l.pincode),
     ]);
     return [...set].sort();
-  }, [ordersWithLeads, qualifiedLeadsWithoutOrders]);
+  }, [leads, ordersWithLeads]);
 
-  const filtered = useMemo(() => {
-    return ordersWithLeads.filter(o => {
-      if (search) {
-        const s = search.toLowerCase();
-        const name = o.lead?.client_name?.toLowerCase() || "";
-        const pin = o.lead?.pincode || "";
-        if (!name.includes(s) && !pin.includes(s)) return false;
-      }
-      if (filterPincode && filterPincode !== "all" && o.lead?.pincode !== filterPincode) return false;
-      if (filterStatus && filterStatus !== "all" && o.status !== filterStatus) return false;
-
-      if (tab === "scheduled") return o.status === "pending_visit";
-      if (tab === "completed") return o.status === "sample_ordered" || o.status === "visited";
-      if (tab === "revisit") return o.status === "revisit_needed";
-      if (tab === "dropped") return o.status === "dropped";
-      return true;
-    });
-  }, [ordersWithLeads, search, filterPincode, filterStatus, tab]);
-
-  // Filtered qualified leads for scheduled tab
-  const filteredQualifiedForScheduled = useMemo(() => {
-    return qualifiedLeadsWithoutOrders.filter(l => {
-      if (search) {
-        const s = search.toLowerCase();
-        if (!l.client_name.toLowerCase().includes(s) && !l.pincode.includes(s)) return false;
-      }
-      if (filterPincode && filterPincode !== "all" && l.pincode !== filterPincode) return false;
-      return true;
-    });
-  }, [qualifiedLeadsWithoutOrders, search, filterPincode]);
-
-  const counts = useMemo(() => ({
-    scheduled: ordersWithLeads.filter(o => o.status === "pending_visit").length + qualifiedLeadsWithoutOrders.length,
-    completed: ordersWithLeads.filter(o => o.status === "sample_ordered" || o.status === "visited").length,
-    revisit: ordersWithLeads.filter(o => o.status === "revisit_needed").length,
-    dropped: ordersWithLeads.filter(o => o.status === "dropped").length,
-  }), [ordersWithLeads, qualifiedLeadsWithoutOrders]);
-
-  const resetForm = () => {
-    setForm({ delivery_address: "", delivery_date: "", delivery_slot: "", sample_qty_units: "", demand_per_week_kg: "", remarks: "", visit_date: format(new Date(), "yyyy-MM-dd"), count_per_box: "", ripeness_stage: "", follow_up_date: "" });
-    setSelectedLeadId("");
-    setLeadSearch("");
-    setFollowUpDate(undefined);
-    setDeliveryDate(undefined);
-  };
-
-  const handleSelectLead = (leadId: string) => {
-    setSelectedLeadId(leadId);
+  const openLogVisit = (leadId: string, orderId?: string) => {
+    resetForm();
+    setLogVisitLeadId(leadId);
+    setLogVisitOrderId(orderId || null);
     const lead = leads.find(l => l.id === leadId);
     if (lead) {
-      setForm(f => ({
-        ...f,
-        delivery_address: lead.outlet_address || "",
-      }));
+      setForm(f => ({ ...f, delivery_address: lead.outlet_address || "" }));
     }
+    setLogVisitOpen(true);
   };
 
-  const handleCreate = async () => {
-    if (!selectedLeadId || !form.remarks) return;
-
-    // Build avocado spec notes
+  const handleBookSampleOrder = async () => {
+    if (!logVisitLeadId || !form.remarks || !followUpDate) return;
     const specNotes = [
       form.count_per_box && `Count/box: ${form.count_per_box}`,
       form.ripeness_stage && `Ripeness: ${form.ripeness_stage}`,
       followUpDate && `Follow-up: ${format(followUpDate, "dd MMM yyyy")}`,
     ].filter(Boolean).join(" | ");
-
     const fullRemarks = specNotes ? `${form.remarks}\n[Specs] ${specNotes}` : form.remarks;
 
-    const ok = await addOrder({
-      lead_id: selectedLeadId,
-      delivery_address: form.delivery_address || null,
-      delivery_date: deliveryDate ? format(deliveryDate, "yyyy-MM-dd") : null,
-      delivery_slot: form.delivery_slot || null,
-      sample_qty_units: form.sample_qty_units ? Number(form.sample_qty_units) : null,
-      demand_per_week_kg: form.demand_per_week_kg ? Number(form.demand_per_week_kg) : null,
-      remarks: fullRemarks,
-      visit_date: form.visit_date || null,
-      status: "sample_ordered",
-    });
-
-    if (ok) {
-      // Update lead status to reflect sample order
-      const { error } = await (await import("@/integrations/supabase/client")).supabase
-        .from("leads")
-        .update({ status: "qualified", updated_at: new Date().toISOString() })
-        .eq("id", selectedLeadId);
-
-      resetForm();
-      setCreateOpen(false);
+    if (logVisitOrderId) {
+      await updateOrder(logVisitOrderId, {
+        status: "sample_ordered",
+        remarks: fullRemarks,
+        delivery_address: form.delivery_address || null,
+        delivery_date: deliveryDate ? format(deliveryDate, "yyyy-MM-dd") : null,
+        delivery_slot: form.delivery_slot || null,
+        sample_qty_units: form.sample_qty_units ? Number(form.sample_qty_units) : null,
+        demand_per_week_kg: form.demand_per_week_kg ? Number(form.demand_per_week_kg) : null,
+      });
+    } else {
+      await addOrder({
+        lead_id: logVisitLeadId,
+        status: "sample_ordered",
+        remarks: fullRemarks,
+        visit_date: form.visit_date || null,
+        delivery_address: form.delivery_address || null,
+        delivery_date: deliveryDate ? format(deliveryDate, "yyyy-MM-dd") : null,
+        delivery_slot: form.delivery_slot || null,
+        sample_qty_units: form.sample_qty_units ? Number(form.sample_qty_units) : null,
+        demand_per_week_kg: form.demand_per_week_kg ? Number(form.demand_per_week_kg) : null,
+      });
     }
+    // Increment visit count
+    const lead = leads.find(l => l.id === logVisitLeadId);
+    if (lead) {
+      await updateLead(logVisitLeadId, { visit_count: (lead.visit_count || 0) + 1 });
+    }
+    toast({ title: "Sample order booked" });
+    resetForm();
+    setLogVisitOpen(false);
   };
 
-  const handleDrop = async () => {
-    if (!dropOrderId || !dropReason) return;
-    await updateOrder(dropOrderId, {
-      status: "dropped",
-      remarks: `[Dropped] ${dropReason}${dropRemarks ? `: ${dropRemarks}` : ""}`,
-    });
+  const handleRevisitRequired = async () => {
+    if (!logVisitLeadId || !revisitDate) return;
+    const remarks = `[Re-visit: ${format(revisitDate, "dd MMM yyyy")}${revisitTime ? " " + revisitTime : ""}] ${revisitRemarks || form.remarks}`;
+    if (logVisitOrderId) {
+      await updateOrder(logVisitOrderId, { status: "revisit_needed", remarks });
+    } else {
+      await addOrder({
+        lead_id: logVisitLeadId,
+        status: "revisit_needed",
+        remarks,
+        visit_date: form.visit_date || null,
+        delivery_address: form.delivery_address || null,
+      });
+    }
+    const lead = leads.find(l => l.id === logVisitLeadId);
+    if (lead) {
+      await updateLead(logVisitLeadId, { visit_count: (lead.visit_count || 0) + 1 });
+    }
+    toast({ title: "Re-visit scheduled" });
+    resetForm();
+    setLogVisitOpen(false);
+    setRevisitSubOpen(false);
+    setRevisitDate(undefined);
+    setRevisitTime("");
+    setRevisitRemarks("");
+  };
+
+  const handleNotInterested = async () => {
+    if (!dropReason) return;
+    const remarks = `[Dropped] ${dropReason}${dropRemarks ? `: ${dropRemarks}` : ""}`;
+    if (dropOrderId) {
+      await updateOrder(dropOrderId, { status: "dropped", remarks });
+    } else if (dropLeadId) {
+      await addOrder({
+        lead_id: dropLeadId,
+        status: "dropped",
+        remarks,
+        visit_date: format(new Date(), "yyyy-MM-dd"),
+      });
+    }
+    toast({ title: "Marked as not interested" });
+    setDropOpen(false);
+    setDropLeadId(null);
     setDropOrderId(null);
     setDropReason("");
     setDropRemarks("");
   };
 
-  const handleRevisit = async () => {
-    if (!revisitOrderId || !revisitDate) return;
-    await updateOrder(revisitOrderId, {
-      status: "revisit_needed",
-      remarks: `[Re-visit scheduled: ${format(revisitDate, "dd MMM yyyy")}] ${revisitRemarks}`,
-    });
-    setRevisitOrderId(null);
-    setRevisitDate(undefined);
-    setRevisitRemarks("");
+  const extractFollowUp = (remarks: string | null) => {
+    if (!remarks) return null;
+    const match = remarks.match(/Follow-up:\s*(\d{2}\s\w+\s\d{4})/);
+    return match ? match[1] : null;
   };
+
+  // Render scheduled table row
+  const renderScheduledRow = (leadId: string, clientName: string, pmName: string | null, visitDate: string | null, kam: string | null, orderId?: string) => (
+    <TableRow key={orderId || leadId} className="text-sm">
+      <TableCell className="font-medium max-w-[180px] truncate">{clientName}</TableCell>
+      <TableCell className="text-xs text-muted-foreground">{pmName || "—"}</TableCell>
+      <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{visitDate ? format(new Date(visitDate), "dd MMM") : "—"}</TableCell>
+      <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{kam || "—"}</TableCell>
+      <TableCell>
+        <div className="flex gap-1 flex-wrap">
+          <Button size="sm" className="text-xs h-7" onClick={() => openLogVisit(leadId, orderId)}>Log Visit</Button>
+          <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => {
+            setDropLeadId(leadId);
+            setDropOrderId(orderId || null);
+            setDropReason("");
+            setDropRemarks("");
+            setDropOpen(true);
+          }}>Not Interested</Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
 
   return (
     <div className="space-y-4">
@@ -261,12 +324,8 @@ export default function SampleOrdersPage() {
           <h1 className="text-xl font-bold text-foreground">Step 3: Visit to Sample Order</h1>
           <p className="text-sm text-muted-foreground">{orders.length} total sample orders</p>
         </div>
-        <Button size="sm" onClick={() => { resetForm(); setCreateOpen(true); }}>
-          <Plus className="w-4 h-4 mr-1" /> New Sample Order
-        </Button>
       </div>
 
-      {/* Brochure Carousel */}
       <AvocadoBrochureCarousel />
 
       {/* Tabs */}
@@ -291,244 +350,224 @@ export default function SampleOrdersPage() {
               {pincodes.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-full sm:w-[160px] h-9 text-xs"><SelectValue placeholder="All Statuses" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="pending_visit">Scheduled</SelectItem>
-              <SelectItem value="visited">Visited</SelectItem>
-              <SelectItem value="sample_ordered">Sample Ordered</SelectItem>
-              <SelectItem value="revisit_needed">Re-visit Needed</SelectItem>
-              <SelectItem value="dropped">Dropped</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <TabsContent value="scheduled" className="mt-3">
-          {loading ? (
-            <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
-          ) : (filtered.length === 0 && filteredQualifiedForScheduled.length === 0) ? (
-            <div className="p-8 text-center text-muted-foreground text-sm">No scheduled items found</div>
-          ) : (
-            <div className="space-y-4">
-              {/* Qualified Leads ready for sample order */}
-              {filteredQualifiedForScheduled.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Qualified Leads — Ready for Sample Order ({filteredQualifiedForScheduled.length})</p>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {filteredQualifiedForScheduled.map(l => (
-                      <Card key={l.id} className="hover:shadow-md transition-shadow border-l-4 border-l-success">
-                        <CardContent className="p-4 space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div className="min-w-0">
-                              <p className="font-semibold text-sm truncate">{l.client_name}</p>
-                              <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                                <MapPin className="w-3 h-3 shrink-0" /> {l.locality || l.pincode}
-                              </p>
-                            </div>
-                            <Badge variant="outline" className="text-[10px] shrink-0 bg-success/10 text-success border-success/20">
-                              qualified
-                            </Badge>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            {l.purchase_manager_name && (
-                              <span className="text-muted-foreground">PM: {l.purchase_manager_name}</span>
-                            )}
-                            {l.contact_number && (
-                              <span className="text-muted-foreground">📞 {l.contact_number}</span>
-                            )}
-                            {l.avocado_consumption && (
-                              <span className="text-muted-foreground">Usage: {l.avocado_consumption}</span>
-                            )}
-                            {l.estimated_monthly_spend && (
-                              <span className="text-muted-foreground">₹{l.estimated_monthly_spend}/mo</span>
-                            )}
-                          </div>
-                          {l.remarks && (
-                            <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{l.remarks}</p>
-                          )}
-                          <Button size="sm" className="w-full text-xs h-8" onClick={() => { resetForm(); handleSelectLead(l.id); setCreateOpen(true); }}>
-                            <Plus className="w-3 h-3 mr-1" /> Log Visit
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Pending visit orders */}
-              {filtered.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Pending Visits ({filtered.length})</p>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {filtered.map(o => (
-                      <Card key={o.id} className="hover:shadow-md transition-shadow">
-                        <CardContent className="p-4 space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div className="min-w-0">
-                              <p className="font-semibold text-sm truncate">{o.lead?.client_name || "Unknown"}</p>
-                              <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                                <MapPin className="w-3 h-3 shrink-0" /> {o.lead?.locality || o.lead?.pincode || "—"}
-                              </p>
-                            </div>
-                            <Badge variant="outline" className={`text-[10px] shrink-0 ${statusColors[o.status] || ""}`}>
-                              {o.status.replace(/_/g, " ")}
-                            </Badge>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            {o.sample_qty_units && <span className="flex items-center gap-1 text-muted-foreground"><Package className="w-3 h-3" /> {o.sample_qty_units} units</span>}
-                            {o.delivery_date && <span className="flex items-center gap-1 text-muted-foreground"><Truck className="w-3 h-3" /> {format(new Date(o.delivery_date), "dd MMM")}</span>}
-                          </div>
-                          {o.remarks && <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{o.remarks}</p>}
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="outline" className="text-xs flex-1 h-8" onClick={() => setRevisitOrderId(o.id)}>
-                              <RotateCcw className="w-3 h-3 mr-1" /> Re-visit
-                            </Button>
-                            <Button size="sm" variant="outline" className="text-xs flex-1 h-8 text-destructive" onClick={() => setDropOrderId(o.id)}>
-                              <XCircle className="w-3 h-3 mr-1" /> Drop
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              )}
+          {tab === "completed" && (
+            <div className="flex gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className={cn("text-xs h-9", !followUpFrom && "text-muted-foreground")}>
+                    <CalendarIcon className="w-3 h-3 mr-1" />
+                    {followUpFrom ? format(followUpFrom, "dd MMM") : "From"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={followUpFrom} onSelect={setFollowUpFrom} initialFocus className="p-3 pointer-events-auto" />
+                </PopoverContent>
+              </Popover>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className={cn("text-xs h-9", !followUpTo && "text-muted-foreground")}>
+                    <CalendarIcon className="w-3 h-3 mr-1" />
+                    {followUpTo ? format(followUpTo, "dd MMM") : "To"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={followUpTo} onSelect={setFollowUpTo} initialFocus className="p-3 pointer-events-auto" />
+                </PopoverContent>
+              </Popover>
             </div>
           )}
+        </div>
+
+        {/* Scheduled Tab */}
+        <TabsContent value="scheduled" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs">PM Name</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Visit Date</TableHead>
+                      <TableHead className="text-xs hidden md:table-cell">KAM</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                    ) : (scheduledLeads.length === 0 && scheduledOrders.length === 0) ? (
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No scheduled visits. Qualify leads in Step 2 to see them here.</TableCell></TableRow>
+                    ) : (
+                      <>
+                        {scheduledLeads.map(l =>
+                          renderScheduledRow(l.id, l.client_name, l.purchase_manager_name, l.appointment_date, l.created_by)
+                        )}
+                        {scheduledOrders.map(o =>
+                          renderScheduledRow(o.lead_id, o.lead?.client_name || "Unknown", o.lead?.purchase_manager_name || null, o.visit_date, o.lead?.created_by || null, o.id)
+                        )}
+                      </>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        {/* Other tabs */}
-        {(["completed", "revisit", "dropped"] as const).map(t => (
-          <TabsContent key={t} value={t} className="mt-3">
-            {loading ? (
-              <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
-            ) : filtered.length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground text-sm">No sample orders found</div>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {filtered.map(o => (
-                  <Card key={o.id} className="hover:shadow-md transition-shadow">
-                    <CardContent className="p-4 space-y-3">
-                      <div className="flex items-start justify-between">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-sm truncate">{o.lead?.client_name || "Unknown"}</p>
-                          <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                            <MapPin className="w-3 h-3 shrink-0" /> {o.lead?.locality || o.lead?.pincode || "—"}
-                          </p>
-                        </div>
-                        <Badge variant="outline" className={`text-[10px] shrink-0 ${statusColors[o.status] || ""}`}>
-                          {o.status.replace(/_/g, " ")}
-                        </Badge>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        {o.sample_qty_units && <span className="flex items-center gap-1 text-muted-foreground"><Package className="w-3 h-3" /> {o.sample_qty_units} units</span>}
-                        {o.delivery_date && <span className="flex items-center gap-1 text-muted-foreground"><Truck className="w-3 h-3" /> {format(new Date(o.delivery_date), "dd MMM")}</span>}
-                        {o.demand_per_week_kg && <span className="flex items-center gap-1 text-muted-foreground"><Package className="w-3 h-3" /> {o.demand_per_week_kg} kg/wk</span>}
-                        {o.visit_date && <span className="flex items-center gap-1 text-muted-foreground"><Eye className="w-3 h-3" /> Visit: {format(new Date(o.visit_date), "dd MMM")}</span>}
-                      </div>
-                      {o.delivery_address && <p className="text-xs text-muted-foreground truncate">📍 {o.delivery_address}</p>}
-                      {o.remarks && <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{o.remarks}</p>}
-                      {o.status !== "dropped" && o.status !== "sample_ordered" && (
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="outline" className="text-xs flex-1 h-8" onClick={() => setRevisitOrderId(o.id)}>
-                            <RotateCcw className="w-3 h-3 mr-1" /> Re-visit
-                          </Button>
-                          <Button size="sm" variant="outline" className="text-xs flex-1 h-8 text-destructive" onClick={() => setDropOrderId(o.id)}>
-                            <XCircle className="w-3 h-3 mr-1" /> Drop
-                          </Button>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
+        {/* Completed Tab */}
+        <TabsContent value="completed" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs">Follow-up Date</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Qty</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {completedOrders.length === 0 ? (
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No completed orders yet.</TableCell></TableRow>
+                    ) : (
+                      completedOrders.map(o => {
+                        const fu = extractFollowUp(o.remarks);
+                        return (
+                          <TableRow key={o.id} className="text-sm">
+                            <TableCell className="font-medium">{o.lead?.client_name || "Unknown"}</TableCell>
+                            <TableCell>
+                              {fu ? (
+                                <Badge variant="outline" className="text-xs bg-warning/10 text-warning border-warning/20">
+                                  <CalendarIcon className="w-3 h-3 mr-1" /> {fu}
+                                </Badge>
+                              ) : <span className="text-xs text-muted-foreground">—</span>}
+                            </TableCell>
+                            <TableCell className="text-xs hidden sm:table-cell">{o.sample_qty_units || "—"} units</TableCell>
+                            <TableCell className="hidden sm:table-cell">
+                              <Badge variant="outline" className={`text-[10px] ${statusColors[o.status]}`}>{o.status.replace(/_/g, " ")}</Badge>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
               </div>
-            )}
-          </TabsContent>
-        ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Re-visits Tab */}
+        <TabsContent value="revisit" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs">PM Name</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Visit Date</TableHead>
+                      <TableHead className="text-xs hidden md:table-cell">KAM</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {revisitOrders.length === 0 ? (
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No re-visits pending.</TableCell></TableRow>
+                    ) : (
+                      revisitOrders.map(o =>
+                        renderScheduledRow(o.lead_id, o.lead?.client_name || "Unknown", o.lead?.purchase_manager_name || null, o.visit_date, o.lead?.created_by || null, o.id)
+                      )
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Dropped Tab */}
+        <TabsContent value="dropped" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs">Reason</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {droppedOrders.length === 0 ? (
+                      <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground text-sm py-8">No dropped orders.</TableCell></TableRow>
+                    ) : (
+                      droppedOrders.map(o => (
+                        <TableRow key={o.id} className="text-sm">
+                          <TableCell className="font-medium">{o.lead?.client_name || "Unknown"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{o.remarks || "—"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{format(new Date(o.updated_at), "dd MMM")}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
-      {/* Create Sample Order Dialog */}
-      <Dialog open={createOpen} onOpenChange={open => { if (!open) { setCreateOpen(false); resetForm(); } }}>
+      {/* Log Visit Dialog */}
+      <Dialog open={logVisitOpen} onOpenChange={open => { if (!open) { setLogVisitOpen(false); resetForm(); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>New Sample Order</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Log Visit — New Sample Order</DialogTitle></DialogHeader>
           <div className="grid gap-3 py-2">
-            {/* Lead selection */}
-            <div className="space-y-2">
-              <Label className="text-xs font-medium">Select Qualified Lead *</Label>
-              <Input placeholder="Search leads by name, pincode..." value={leadSearch} onChange={e => setLeadSearch(e.target.value)} className="h-8 text-xs" />
-              {!selectedLeadId && filteredQualifiedLeads.length > 0 && (
-                <div className="max-h-32 overflow-y-auto border rounded-md">
-                  {filteredQualifiedLeads.map(l => (
-                    <button key={l.id} className="w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors border-b last:border-b-0" onClick={() => handleSelectLead(l.id)}>
-                      <span className="font-medium">{l.client_name}</span>
-                      <span className="text-muted-foreground ml-2">{l.locality || ""} · {l.pincode}</span>
-                      {l.purchase_manager_name && <span className="text-muted-foreground ml-2">PM: {l.purchase_manager_name}</span>}
-                    </button>
-                  ))}
+            {/* Auto-filled client info */}
+            {logVisitLeadId && (() => {
+              const lead = leads.find(l => l.id === logVisitLeadId);
+              if (!lead) return null;
+              return (
+                <div className="bg-muted/50 p-3 rounded-md space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Client Details</p>
+                  <div className="grid grid-cols-2 gap-1 text-xs">
+                    <div><span className="text-muted-foreground">Client:</span> {lead.client_name}</div>
+                    <div><span className="text-muted-foreground">Pincode:</span> {lead.pincode}</div>
+                    {lead.purchase_manager_name && <div><span className="text-muted-foreground">PM:</span> {lead.purchase_manager_name}</div>}
+                    {lead.contact_number && <div><span className="text-muted-foreground">Phone:</span> {lead.contact_number}</div>}
+                  </div>
                 </div>
-              )}
-              {selectedLead && (
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="bg-success/10 text-success text-xs">
-                    Selected: {selectedLead.client_name}
-                  </Badge>
-                  <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => { setSelectedLeadId(""); setLeadSearch(""); }}>Change</Button>
-                </div>
-              )}
-            </div>
+              );
+            })()}
 
-            {/* Pre-filled read-only fields */}
-            {selectedLead && (
-              <div className="bg-muted/50 p-3 rounded-md space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Client Details (from Lead)</p>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div><span className="text-muted-foreground">Client:</span> {selectedLead.client_name}</div>
-                  <div><span className="text-muted-foreground">Pincode:</span> {selectedLead.pincode}</div>
-                  {selectedLead.purchase_manager_name && (
-                    <div><span className="text-muted-foreground">PM:</span> {selectedLead.purchase_manager_name}</div>
-                  )}
-                  {selectedLead.pm_contact && (
-                    <div><span className="text-muted-foreground">PM Contact:</span> {selectedLead.pm_contact}</div>
-                  )}
-                  {selectedLead.contact_number && (
-                    <div><span className="text-muted-foreground">Phone:</span> {selectedLead.contact_number}</div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Visit date auto-captured */}
             <div className="space-y-1">
               <Label className="text-xs">Visit Date (auto-captured)</Label>
               <Input value={form.visit_date} readOnly className="bg-muted/50 text-xs" />
             </div>
 
-            {/* Avocado specs */}
             <p className="text-xs font-medium text-foreground mt-1">Avocado Specifications</p>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Count per Box</Label>
                 <Select value={form.count_per_box} onValueChange={v => setForm(f => ({ ...f, count_per_box: v }))}>
                   <SelectTrigger className="text-xs"><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>
-                    {countOptions.map(c => <SelectItem key={c} value={c}>{c} count</SelectItem>)}
-                  </SelectContent>
+                  <SelectContent>{countOptions.map(c => <SelectItem key={c} value={c}>{c} count</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Ripeness Stage</Label>
                 <Select value={form.ripeness_stage} onValueChange={v => setForm(f => ({ ...f, ripeness_stage: v }))}>
                   <SelectTrigger className="text-xs"><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>
-                    {ripenessOptions.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                  </SelectContent>
+                  <SelectContent>{ripenessOptions.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>
 
-            {/* Sample order details */}
             <p className="text-xs font-medium text-foreground mt-1">Sample Order Details</p>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -542,7 +581,7 @@ export default function SampleOrdersPage() {
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs">Delivery Date *</Label>
+              <Label className="text-xs">Delivery Date</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className={cn("w-full justify-start text-left font-normal text-xs h-9", !deliveryDate && "text-muted-foreground")}>
@@ -574,13 +613,11 @@ export default function SampleOrdersPage() {
               </Select>
             </div>
 
-            {/* KAM Notes */}
             <div className="space-y-1">
               <Label className="text-xs">KAM Notes *</Label>
               <Textarea placeholder="Visit observations, client feedback..." value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={3} />
             </div>
 
-            {/* Follow-up date */}
             <div className="space-y-1">
               <Label className="text-xs">Next Follow-up Date *</Label>
               <Popover>
@@ -598,22 +635,12 @@ export default function SampleOrdersPage() {
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" size="sm" onClick={() => {
-              if (!selectedLeadId) return;
-              setRevisitOrderId("new");
-              setRevisitRemarks(form.remarks);
-            }} disabled={!selectedLeadId}>
-              <RotateCcw className="w-3 h-3 mr-1" /> Re-visit Required
+            <Button variant="outline" size="sm" onClick={() => setRevisitSubOpen(true)} disabled={!logVisitLeadId}>
+              <RotateCcw className="w-3 h-3 mr-1" /> Revisit Required
             </Button>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="text-destructive" onClick={() => {
-                if (!selectedLeadId) return;
-                setDropOrderId("new");
-              }} disabled={!selectedLeadId}>
-                <XCircle className="w-3 h-3 mr-1" /> Not Interested
-              </Button>
               <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-              <Button size="sm" onClick={handleCreate} disabled={!selectedLeadId || !form.remarks || !followUpDate}>
+              <Button size="sm" onClick={handleBookSampleOrder} disabled={!logVisitLeadId || !form.remarks || !followUpDate}>
                 <Package className="w-3 h-3 mr-1" /> Book Sample Order
               </Button>
             </div>
@@ -621,18 +648,40 @@ export default function SampleOrdersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Drop Dialog */}
-      <Dialog open={!!dropOrderId} onOpenChange={open => { if (!open) { setDropOrderId(null); setDropReason(""); setDropRemarks(""); } }}>
+      {/* Revisit Sub-dialog */}
+      <Dialog open={revisitSubOpen} onOpenChange={open => { if (!open) { setRevisitSubOpen(false); } }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle className="text-base">Mark as Dropped</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="text-base">Schedule Re-visit</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="flex justify-center">
+              <Calendar mode="single" selected={revisitDate} onSelect={setRevisitDate} initialFocus className="p-3 pointer-events-auto" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Time (optional)</Label>
+              <Input type="time" value={revisitTime} onChange={e => setRevisitTime(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Notes</Label>
+              <Textarea placeholder="Re-visit reason..." value={revisitRemarks} onChange={e => setRevisitRemarks(e.target.value)} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+            <Button size="sm" onClick={handleRevisitRequired} disabled={!revisitDate}>Confirm Re-visit</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Not Interested / Drop Dialog */}
+      <Dialog open={dropOpen} onOpenChange={open => { if (!open) { setDropOpen(false); setDropLeadId(null); setDropOrderId(null); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle className="text-base">Not Interested</DialogTitle></DialogHeader>
           <div className="grid gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Reason *</Label>
               <Select value={dropReason} onValueChange={setDropReason}>
                 <SelectTrigger className="text-xs"><SelectValue placeholder="Select reason" /></SelectTrigger>
-                <SelectContent>
-                  {dropReasons.map(r => <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>)}
-                </SelectContent>
+                <SelectContent>{dropReasons.map(r => <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
@@ -642,67 +691,7 @@ export default function SampleOrdersPage() {
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" variant="destructive" onClick={async () => {
-              if (dropOrderId === "new") {
-                // Create order as dropped
-                if (!selectedLeadId || !dropReason) return;
-                await addOrder({
-                  lead_id: selectedLeadId,
-                  status: "dropped",
-                  remarks: `[Dropped] ${dropReason}${dropRemarks ? `: ${dropRemarks}` : ""}`,
-                  visit_date: form.visit_date || null,
-                });
-                resetForm();
-                setCreateOpen(false);
-                setDropOrderId(null);
-                setDropReason("");
-                setDropRemarks("");
-              } else {
-                await handleDrop();
-              }
-            }} disabled={!dropReason}>
-              Confirm Drop
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Re-visit Dialog */}
-      <Dialog open={!!revisitOrderId} onOpenChange={open => { if (!open) { setRevisitOrderId(null); setRevisitDate(undefined); setRevisitRemarks(""); } }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle className="text-base">Schedule Re-visit</DialogTitle></DialogHeader>
-          <div className="grid gap-3">
-            <div className="flex justify-center">
-              <Calendar mode="single" selected={revisitDate} onSelect={setRevisitDate} initialFocus className="p-3 pointer-events-auto" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Notes</Label>
-              <Textarea placeholder="Re-visit reason..." value={revisitRemarks} onChange={e => setRevisitRemarks(e.target.value)} rows={2} />
-            </div>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" onClick={async () => {
-              if (revisitOrderId === "new") {
-                if (!selectedLeadId || !revisitDate) return;
-                await addOrder({
-                  lead_id: selectedLeadId,
-                  status: "revisit_needed",
-                  remarks: `[Re-visit: ${format(revisitDate, "dd MMM yyyy")}] ${revisitRemarks || form.remarks}`,
-                  visit_date: form.visit_date || null,
-                  delivery_address: form.delivery_address || null,
-                });
-                resetForm();
-                setCreateOpen(false);
-                setRevisitOrderId(null);
-                setRevisitDate(undefined);
-                setRevisitRemarks("");
-              } else {
-                await handleRevisit();
-              }
-            }} disabled={!revisitDate}>
-              Confirm Re-visit
-            </Button>
+            <Button size="sm" variant="destructive" onClick={handleNotInterested} disabled={!dropReason}>Confirm</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,465 +12,573 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Calendar } from "@/components/ui/calendar";
-import { useLeads, type LeadFilters } from "@/hooks/useLeads";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { useLeads } from "@/hooks/useLeads";
 import { useProspects } from "@/hooks/useProspects";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Plus, Search, Phone, MapPin, ArrowUpDown, PhoneCall, Eye, Clock, ChevronDown, CalendarIcon, Import, FileText,
+  Plus, Search, MapPin, CalendarIcon, PhoneCall, Eye, Clock,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
-const statusColors: Record<string, string> = {
-  new: "bg-info/10 text-info border-info/20",
-  in_progress: "bg-accent/10 text-accent border-accent/20",
-  qualified: "bg-success/10 text-success border-success/20",
-  failed: "bg-destructive/10 text-destructive border-destructive/20",
-  rescheduled: "bg-warning/10 text-warning border-warning/20",
-  incomplete: "bg-muted text-muted-foreground border-border",
+const tagColors: Record<string, string> = {
+  New: "bg-info/10 text-info border-info/20",
+  "In Progress": "bg-accent/10 text-accent border-accent/20",
+  Qualified: "bg-success/10 text-success border-success/20",
+  Rescheduled: "bg-warning/10 text-warning border-warning/20",
+  Dropped: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
-const callOutcomes = [
-  "Connected-Interested", "Connected-Not Interested", "Connected-Call Later",
-  "Not Reachable", "Wrong Number", "Switched Off",
-];
-
 export default function LeadsPage() {
-  const { leads, loading, addLead, updateLead, filterLeads, refetch } = useLeads();
-  const { prospects } = useProspects();
-  const { user } = useAuth();
+  const { leads, loading: leadsLoading, addLead, refetch: refetchLeads } = useLeads();
+  const { prospects, loading: prospectsLoading, updateProspect } = useProspects();
+  const { user, userRole } = useAuth();
   const { toast } = useToast();
-  const listRef = useRef<HTMLDivElement>(null);
-  const [tab, setTab] = useState<"fresh" | "revisit" | "dropped">("fresh");
+
+  const [tab, setTab] = useState<"available" | "revisit" | "dropouts">("available");
   const [search, setSearch] = useState("");
-  const [filterPincode, setFilterPincode] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [sortBy, setSortBy] = useState<"created_at" | "call_count" | "visit_count">("created_at");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [filterLocality, setFilterLocality] = useState("");
 
-  // Add lead mode
-  const [addMode, setAddMode] = useState<"import" | "fresh" | null>(null);
-  const [prospectSearch, setProspectSearch] = useState("");
-  const [selectedProspect, setSelectedProspect] = useState<string>("");
+  // Create Lead dialog
+  const [createLeadOpen, setCreateLeadOpen] = useState(false);
+  const [createLeadProspectId, setCreateLeadProspectId] = useState<string | null>(null);
 
-  // Call/visit log
-  const [callLogOpen, setCallLogOpen] = useState<string | null>(null);
-  const [visitLogOpen, setVisitLogOpen] = useState<string | null>(null);
+  // Log Unsuccessful dialog
+  const [unsuccessfulOpen, setUnsuccessfulOpen] = useState(false);
+  const [unsuccessfulProspectId, setUnsuccessfulProspectId] = useState<string | null>(null);
+  const [unsuccessfulReason, setUnsuccessfulReason] = useState("");
+  const [unsuccessfulRemarks, setUnsuccessfulRemarks] = useState("");
 
-  // Save as incomplete
+  // Save as Incomplete sub-dialog
   const [incompleteOpen, setIncompleteOpen] = useState(false);
   const [revisitDate, setRevisitDate] = useState<Date | undefined>();
+  const [revisitTime, setRevisitTime] = useState("");
 
+  // Add New Lead (no pre-fill)
+  const [addNewLeadOpen, setAddNewLeadOpen] = useState(false);
+
+  // Lead form
   const [form, setForm] = useState({
     client_name: "", outlet_address: "", pincode: "", locality: "",
-    contact_number: "", gst_id: "", avocado_consumption: "",
-    avocado_variety: "", purchase_manager_name: "", pm_contact: "",
-    franchised: false, current_supplier: "", estimated_monthly_spend: "",
-    remarks: "", appointment_date: "", appointment_time: "",
+    contact_number: "", gst_id: "",
+    purchase_manager_name: "", pm_contact: "", email: "", instagram_url: "", linkedin_url: "", swiggy_zomato_url: "", others_info: "",
+    avocado_consumption: "", avocado_variety: "", current_supplier: "", estimated_monthly_spend: "",
+    franchised: false,
+    appointment_date: "", appointment_time: "",
+    remarks: "",
   });
 
-  const [callForm, setCallForm] = useState({ outcome: "", remarks: "" });
-  const [visitForm, setVisitForm] = useState({ remarks: "" });
-
-  const filters: LeadFilters = { search, pincode: filterPincode, status: filterStatus, tab };
-  const filtered = useMemo(() => {
-    const list = filterLeads(filters);
-    return list.sort((a, b) => {
-      const aVal = sortBy === "created_at" ? a.created_at : (a[sortBy] || 0);
-      const bVal = sortBy === "created_at" ? b.created_at : (b[sortBy] || 0);
-      if (sortDir === "asc") return aVal > bVal ? 1 : -1;
-      return aVal < bVal ? 1 : -1;
-    });
-  }, [leads, filters, sortBy, sortDir]);
-
-  const pincodes = useMemo(() => [...new Set(leads.map(l => l.pincode))].sort(), [leads]);
-
-  const counts = useMemo(() => ({
-    fresh: leads.filter(l => (l.call_count || 0) === 0 && (l.visit_count || 0) === 0).length,
-    revisit: leads.filter(l => (l.call_count || 0) > 0 || (l.visit_count || 0) > 0).length,
-    dropped: leads.filter(l => l.status === "failed").length,
-  }), [leads]);
-
-  const filteredProspects = useMemo(() => {
-    const s = prospectSearch.toLowerCase();
-    return prospects.filter(p =>
-      (p.status === "available" || p.status === "assigned") &&
-      (!s || p.restaurant_name.toLowerCase().includes(s) || p.pincode.includes(s) || p.locality.toLowerCase().includes(s))
-    );
-  }, [prospects, prospectSearch]);
-
   const resetForm = () => {
-    setForm({ client_name: "", outlet_address: "", pincode: "", locality: "", contact_number: "", gst_id: "", avocado_consumption: "", avocado_variety: "", purchase_manager_name: "", pm_contact: "", franchised: false, current_supplier: "", estimated_monthly_spend: "", remarks: "", appointment_date: "", appointment_time: "" });
-    setSelectedProspect("");
-    setProspectSearch("");
+    setForm({
+      client_name: "", outlet_address: "", pincode: "", locality: "",
+      contact_number: "", gst_id: "",
+      purchase_manager_name: "", pm_contact: "", email: "", instagram_url: "", linkedin_url: "", swiggy_zomato_url: "", others_info: "",
+      avocado_consumption: "", avocado_variety: "", current_supplier: "", estimated_monthly_spend: "",
+      franchised: false,
+      appointment_date: "", appointment_time: "",
+      remarks: "",
+    });
   };
 
-  const handleProspectSelect = (prospectId: string) => {
-    setSelectedProspect(prospectId);
+  // Filter prospects assigned to current user
+  const myProspects = useMemo(() => {
+    return prospects.filter(p => p.mapped_to === user?.email && p.status === "assigned");
+  }, [prospects, user]);
+
+  const availableProspects = useMemo(() => {
+    let list = myProspects.filter(p => !p.tag || p.tag === "New");
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter(p => p.restaurant_name.toLowerCase().includes(s) || p.locality.toLowerCase().includes(s));
+    }
+    if (filterLocality && filterLocality !== "all") list = list.filter(p => p.locality === filterLocality);
+    return list;
+  }, [myProspects, search, filterLocality]);
+
+  const revisitProspects = useMemo(() => {
+    let list = myProspects.filter(p => p.tag === "In Progress" || p.tag === "Rescheduled");
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter(p => p.restaurant_name.toLowerCase().includes(s) || p.locality.toLowerCase().includes(s));
+    }
+    if (filterLocality && filterLocality !== "all") list = list.filter(p => p.locality === filterLocality);
+    return list;
+  }, [myProspects, search, filterLocality]);
+
+  const droppedProspects = useMemo(() => {
+    let list = myProspects.filter(p => p.tag === "Dropped");
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter(p => p.restaurant_name.toLowerCase().includes(s) || p.locality.toLowerCase().includes(s));
+    }
+    if (filterLocality && filterLocality !== "all") list = list.filter(p => p.locality === filterLocality);
+    return list;
+  }, [myProspects, search, filterLocality]);
+
+  const localities = useMemo(() => [...new Set(myProspects.map(p => p.locality))].filter(Boolean).sort(), [myProspects]);
+
+  const counts = useMemo(() => ({
+    available: myProspects.filter(p => !p.tag || p.tag === "New").length,
+    revisit: myProspects.filter(p => p.tag === "In Progress" || p.tag === "Rescheduled").length,
+    dropouts: myProspects.filter(p => p.tag === "Dropped").length,
+  }), [myProspects]);
+
+  const openCreateLead = (prospectId: string) => {
     const p = prospects.find(pr => pr.id === prospectId);
+    resetForm();
     if (p) {
       setForm(f => ({
         ...f,
         client_name: p.restaurant_name,
+        outlet_address: p.location || "",
         pincode: p.pincode,
         locality: p.locality,
-        outlet_address: p.location || "",
       }));
     }
+    setCreateLeadProspectId(prospectId);
+    setCreateLeadOpen(true);
   };
 
-  const buildLeadPayload = (status: string) => ({
-    client_name: form.client_name,
-    pincode: form.pincode,
-    locality: form.locality || null,
-    outlet_address: form.outlet_address || null,
-    contact_number: form.contact_number || null,
-    gst_id: form.gst_id || null,
-    avocado_consumption: form.avocado_consumption || null,
-    avocado_variety: form.avocado_variety || null,
-    purchase_manager_name: form.purchase_manager_name || null,
-    pm_contact: form.pm_contact || null,
-    franchised: form.franchised,
-    current_supplier: form.current_supplier || null,
-    estimated_monthly_spend: form.estimated_monthly_spend ? Number(form.estimated_monthly_spend) : null,
-    remarks: form.remarks || null,
-    appointment_date: form.appointment_date || null,
-    appointment_time: form.appointment_time || null,
-    prospect_id: selectedProspect || null,
-    created_by: user?.email || null,
-    status,
-  });
+  const openAddNewLead = () => {
+    resetForm();
+    setCreateLeadProspectId(null);
+    setAddNewLeadOpen(true);
+  };
 
-  const handleAddLead = async () => {
+  const incrementCount = () => {
+    if (userRole === "calling_agent") return { call_count: 1 };
+    return { visit_count: 1 };
+  };
+
+  const handleSaveLead = async () => {
     if (!form.client_name || !form.pincode) return;
-    const ok = await addLead(buildLeadPayload("new"));
+    const counts = incrementCount();
+    const ok = await addLead({
+      client_name: form.client_name,
+      pincode: form.pincode,
+      locality: form.locality || null,
+      outlet_address: form.outlet_address || null,
+      contact_number: form.contact_number || null,
+      gst_id: form.gst_id || null,
+      purchase_manager_name: form.purchase_manager_name || null,
+      pm_contact: form.pm_contact || null,
+      avocado_consumption: form.avocado_consumption || null,
+      avocado_variety: form.avocado_variety || null,
+      current_supplier: form.current_supplier || null,
+      estimated_monthly_spend: form.estimated_monthly_spend ? Number(form.estimated_monthly_spend) : null,
+      franchised: form.franchised,
+      appointment_date: form.appointment_date || null,
+      appointment_time: form.appointment_time || null,
+      remarks: form.remarks || null,
+      prospect_id: createLeadProspectId || null,
+      created_by: user?.email || null,
+      status: "qualified",
+      call_count: counts.call_count || 0,
+      visit_count: counts.visit_count || 0,
+    });
     if (ok) {
-      toast({ title: "Lead saved successfully", className: "bg-success text-success-foreground" });
+      // Update prospect tag to Qualified
+      if (createLeadProspectId) {
+        await updateProspect(createLeadProspectId, { tag: "Qualified" });
+      }
+      toast({ title: "Lead saved — marked as Qualified" });
       resetForm();
-      setAddMode(null);
-      refetch();
-      setTimeout(() => listRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
+      setCreateLeadOpen(false);
+      setAddNewLeadOpen(false);
+      refetchLeads();
     }
   };
 
   const handleSaveIncomplete = async () => {
     if (!form.client_name || !form.pincode) return;
-    const remarksSuffix = revisitDate ? `\n[Incomplete - Re-visit on ${format(revisitDate, "dd MMM yyyy")}]` : "";
+    const counts = incrementCount();
+    const remarksSuffix = revisitDate ? `\n[Re-visit: ${format(revisitDate, "dd MMM yyyy")}${revisitTime ? " " + revisitTime : ""}]` : "";
     const ok = await addLead({
-      ...buildLeadPayload("rescheduled"),
-      remarks: (form.remarks || "") + remarksSuffix,
+      client_name: form.client_name,
+      pincode: form.pincode,
+      locality: form.locality || null,
+      outlet_address: form.outlet_address || null,
+      contact_number: form.contact_number || null,
+      gst_id: form.gst_id || null,
+      purchase_manager_name: form.purchase_manager_name || null,
+      pm_contact: form.pm_contact || null,
+      avocado_consumption: form.avocado_consumption || null,
+      avocado_variety: form.avocado_variety || null,
+      current_supplier: form.current_supplier || null,
+      estimated_monthly_spend: form.estimated_monthly_spend ? Number(form.estimated_monthly_spend) : null,
+      franchised: form.franchised,
       appointment_date: revisitDate ? format(revisitDate, "yyyy-MM-dd") : null,
-      visit_count: 1,
+      appointment_time: revisitTime || null,
+      remarks: (form.remarks || "") + remarksSuffix,
+      prospect_id: createLeadProspectId || null,
+      created_by: user?.email || null,
+      status: "in_progress",
+      call_count: counts.call_count || 0,
+      visit_count: counts.visit_count || 0,
     });
     if (ok) {
+      if (createLeadProspectId) {
+        await updateProspect(createLeadProspectId, { tag: "In Progress" });
+      }
       toast({ title: "Saved as incomplete — re-visit scheduled" });
       resetForm();
-      setAddMode(null);
+      setCreateLeadOpen(false);
+      setAddNewLeadOpen(false);
       setIncompleteOpen(false);
       setRevisitDate(undefined);
-      refetch();
+      setRevisitTime("");
+      refetchLeads();
     }
   };
 
-  const handleLogCall = async () => {
-    if (!callLogOpen || !callForm.outcome) return;
-    const lead = leads.find(l => l.id === callLogOpen);
-    if (!lead) return;
-    await updateLead(callLogOpen, {
-      call_count: (lead.call_count || 0) + 1,
-      last_activity_date: new Date().toISOString(),
-      remarks: callForm.remarks ? `${lead.remarks || ""}\n[Call ${format(new Date(), "dd/MM HH:mm")}] ${callForm.outcome}: ${callForm.remarks}` : lead.remarks,
-      status: callForm.outcome.includes("Interested") ? "in_progress" : callForm.outcome.includes("Not Interested") ? "failed" : lead.status,
-    });
-    setCallForm({ outcome: "", remarks: "" });
-    setCallLogOpen(null);
+  const handleLogUnsuccessful = async () => {
+    if (!unsuccessfulProspectId || !unsuccessfulReason || !unsuccessfulRemarks) return;
+    const isDrop = unsuccessfulReason === "Drop";
+    const newTag = isDrop ? "Dropped" : "Rescheduled";
+    await updateProspect(unsuccessfulProspectId, { tag: newTag });
+    toast({ title: isDrop ? "Prospect dropped" : "Prospect rescheduled" });
+    setUnsuccessfulOpen(false);
+    setUnsuccessfulProspectId(null);
+    setUnsuccessfulReason("");
+    setUnsuccessfulRemarks("");
   };
 
-  const handleLogVisit = async () => {
-    if (!visitLogOpen) return;
-    const lead = leads.find(l => l.id === visitLogOpen);
-    if (!lead) return;
-    await updateLead(visitLogOpen, {
-      visit_count: (lead.visit_count || 0) + 1,
-      last_activity_date: new Date().toISOString(),
-      remarks: visitForm.remarks ? `${lead.remarks || ""}\n[Visit ${format(new Date(), "dd/MM HH:mm")}] ${visitForm.remarks}` : lead.remarks,
-      status: "in_progress",
-    });
-    setVisitForm({ remarks: "" });
-    setVisitLogOpen(null);
-  };
+  const loading = prospectsLoading || leadsLoading;
 
-  const toggleSort = (field: typeof sortBy) => {
-    if (sortBy === field) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortBy(field); setSortDir("desc"); }
-  };
-
-  const isFormValid = form.client_name && form.pincode;
-
-  // Lead form UI (shared between import and fresh modes)
+  // Lead form (shared)
   const renderLeadForm = () => (
-    <div className="grid gap-3 py-2">
-      {addMode === "import" && (
-        <div className="space-y-2">
-          <Label className="text-xs font-medium">Search & Select Prospect</Label>
-          <Input placeholder="Search by name, pincode, locality..." value={prospectSearch} onChange={e => setProspectSearch(e.target.value)} className="h-8 text-xs" />
-          {filteredProspects.length > 0 && !selectedProspect && (
-            <div className="max-h-32 overflow-y-auto border rounded-md">
-              {filteredProspects.slice(0, 10).map(p => (
-                <button key={p.id} className="w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors border-b last:border-b-0" onClick={() => handleProspectSelect(p.id)}>
-                  <span className="font-medium">{p.restaurant_name}</span>
-                  <span className="text-muted-foreground ml-2">{p.locality} · {p.pincode}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          {selectedProspect && (
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="bg-success/10 text-success text-xs">
-                Imported: {prospects.find(p => p.id === selectedProspect)?.restaurant_name}
-              </Badge>
-              <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => { setSelectedProspect(""); resetForm(); }}>Change</Button>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="space-y-1">
-        <Label className="text-xs">Client Name *</Label>
-        <Input placeholder="Restaurant name" value={form.client_name} onChange={e => setForm(f => ({ ...f, client_name: e.target.value }))} readOnly={addMode === "import" && !!selectedProspect} />
-      </div>
-      <div className="space-y-1">
-        <Label className="text-xs">Outlet Address *</Label>
-        <Input placeholder="Full address with pincode" value={form.outlet_address} onChange={e => setForm(f => ({ ...f, outlet_address: e.target.value }))} readOnly={addMode === "import" && !!selectedProspect} />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
+    <div className="grid gap-4 py-2 max-h-[60vh] overflow-y-auto">
+      {/* Section 1: Basic Info */}
+      <div className="space-y-3">
+        <p className="text-xs font-semibold text-foreground uppercase tracking-wider border-b pb-1">Basic Info</p>
         <div className="space-y-1">
-          <Label className="text-xs">Pincode *</Label>
-          <Input placeholder="560034" value={form.pincode} onChange={e => setForm(f => ({ ...f, pincode: e.target.value }))} readOnly={addMode === "import" && !!selectedProspect} />
+          <Label className="text-xs">Name *</Label>
+          <Input placeholder="Restaurant name" value={form.client_name} onChange={e => setForm(f => ({ ...f, client_name: e.target.value }))} />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Contact Number *</Label>
-          <Input placeholder="+91..." value={form.contact_number} onChange={e => setForm(f => ({ ...f, contact_number: e.target.value }))} />
+          <Label className="text-xs">Location *</Label>
+          <Input placeholder="Full address" value={form.outlet_address} onChange={e => setForm(f => ({ ...f, outlet_address: e.target.value }))} />
         </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Pincode *</Label>
+            <Input placeholder="560034" value={form.pincode} onChange={e => setForm(f => ({ ...f, pincode: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Contact Number</Label>
+            <Input placeholder="+91..." value={form.contact_number} onChange={e => setForm(f => ({ ...f, contact_number: e.target.value }))} />
+          </div>
+        </div>
         <div className="space-y-1">
           <Label className="text-xs">GST ID</Label>
           <Input placeholder="Optional" value={form.gst_id} onChange={e => setForm(f => ({ ...f, gst_id: e.target.value }))} />
         </div>
+      </div>
+
+      {/* Section 2: Contact Details */}
+      <div className="space-y-3">
+        <p className="text-xs font-semibold text-foreground uppercase tracking-wider border-b pb-1">Contact Details</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">PM Name</Label>
+            <Input placeholder="Name" value={form.purchase_manager_name} onChange={e => setForm(f => ({ ...f, purchase_manager_name: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">PM Contact</Label>
+            <Input placeholder="Phone" value={form.pm_contact} onChange={e => setForm(f => ({ ...f, pm_contact: e.target.value }))} />
+          </div>
+        </div>
         <div className="space-y-1">
-          <Label className="text-xs">Avocado Consumption</Label>
-          <Select value={form.avocado_consumption} onValueChange={v => setForm(f => ({ ...f, avocado_consumption: v }))}>
-            <SelectTrigger className="text-xs"><SelectValue placeholder="Select" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="yes_imported">Yes - Imported</SelectItem>
-              <SelectItem value="yes_indian">Yes - Indian</SelectItem>
-              <SelectItem value="no">No</SelectItem>
-            </SelectContent>
-          </Select>
+          <Label className="text-xs">Email ID</Label>
+          <Input type="email" placeholder="email@example.com" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Instagram URL</Label>
+            <Input placeholder="https://instagram.com/..." value={form.instagram_url} onChange={e => setForm(f => ({ ...f, instagram_url: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">LinkedIn URL</Label>
+            <Input placeholder="https://linkedin.com/..." value={form.linkedin_url} onChange={e => setForm(f => ({ ...f, linkedin_url: e.target.value }))} />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Swiggy/Zomato URL</Label>
+          <Input placeholder="https://..." value={form.swiggy_zomato_url} onChange={e => setForm(f => ({ ...f, swiggy_zomato_url: e.target.value }))} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Others</Label>
+          <Input placeholder="Any other info" value={form.others_info} onChange={e => setForm(f => ({ ...f, others_info: e.target.value }))} />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">Purchase Manager</Label>
-          <Input placeholder="Name" value={form.purchase_manager_name} onChange={e => setForm(f => ({ ...f, purchase_manager_name: e.target.value }))} />
+
+      {/* Section 3: Behaviour */}
+      <div className="space-y-3">
+        <p className="text-xs font-semibold text-foreground uppercase tracking-wider border-b pb-1">Behaviour</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Avocado Consumption</Label>
+            <Select value={form.avocado_consumption} onValueChange={v => setForm(f => ({ ...f, avocado_consumption: v }))}>
+              <SelectTrigger className="text-xs"><SelectValue placeholder="Select" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="no">No</SelectItem>
+                <SelectItem value="yes_imported">Yes - Imported</SelectItem>
+                <SelectItem value="yes_indian">Yes - Indian</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Current Supplier</Label>
+            <Input placeholder="Supplier name" value={form.current_supplier} onChange={e => setForm(f => ({ ...f, current_supplier: e.target.value }))} />
+          </div>
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs">PM Contact</Label>
-          <Input placeholder="Phone" value={form.pm_contact} onChange={e => setForm(f => ({ ...f, pm_contact: e.target.value }))} />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">Current Supplier</Label>
-          <Select value={form.current_supplier} onValueChange={v => setForm(f => ({ ...f, current_supplier: v }))}>
-            <SelectTrigger className="text-xs"><SelectValue placeholder="Select" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Westfalia">Westfalia</SelectItem>
-              <SelectItem value="local">Local</SelectItem>
-              <SelectItem value="none">None</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Monthly Spend (₹)</Label>
-          <Input type="number" placeholder="₹" value={form.estimated_monthly_spend} onChange={e => setForm(f => ({ ...f, estimated_monthly_spend: e.target.value }))} />
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <Checkbox checked={form.franchised} onCheckedChange={v => setForm(f => ({ ...f, franchised: !!v }))} />
-        <Label className="text-xs">Franchised outlet</Label>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">Appointment Date</Label>
-          <Input type="date" value={form.appointment_date} onChange={e => setForm(f => ({ ...f, appointment_date: e.target.value }))} />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Appointment Time</Label>
-          <Input type="time" value={form.appointment_time} onChange={e => setForm(f => ({ ...f, appointment_time: e.target.value }))} />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Monthly Spend ₹</Label>
+            <Input type="number" placeholder="₹" value={form.estimated_monthly_spend} onChange={e => setForm(f => ({ ...f, estimated_monthly_spend: e.target.value }))} />
+          </div>
+          <div className="flex items-end pb-1">
+            <div className="flex items-center gap-2">
+              <Checkbox checked={form.franchised} onCheckedChange={v => setForm(f => ({ ...f, franchised: !!v }))} />
+              <Label className="text-xs">Franchised Outlet</Label>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Section 4: Appointment */}
+      <div className="space-y-3">
+        <p className="text-xs font-semibold text-foreground uppercase tracking-wider border-b pb-1">Appointment</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Date</Label>
+            <Input type="date" value={form.appointment_date} onChange={e => setForm(f => ({ ...f, appointment_date: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Time</Label>
+            <Input type="time" value={form.appointment_time} onChange={e => setForm(f => ({ ...f, appointment_time: e.target.value }))} />
+          </div>
+        </div>
+      </div>
+
+      {/* Section 5: Remarks */}
       <div className="space-y-1">
-        <Label className="text-xs">Remarks *</Label>
-        <Textarea placeholder="Notes about this lead..." value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={2} />
+        <Label className="text-xs">Remarks</Label>
+        <Textarea placeholder="Notes..." value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={2} />
       </div>
     </div>
   );
 
+  const renderProspectRow = (p: typeof prospects[0], showActions: boolean) => (
+    <TableRow key={p.id} className="text-sm">
+      <TableCell className="font-medium max-w-[180px] truncate">{p.restaurant_name}</TableCell>
+      <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
+      <TableCell className="text-xs font-mono hidden sm:table-cell">{p.pincode}</TableCell>
+      <TableCell>
+        {showActions ? (
+          <div className="flex gap-1 flex-wrap">
+            <Button size="sm" className="text-xs h-7" onClick={() => openCreateLead(p.id)}>Create Lead</Button>
+            <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => {
+              setUnsuccessfulProspectId(p.id);
+              setUnsuccessfulReason("");
+              setUnsuccessfulRemarks("");
+              setUnsuccessfulOpen(true);
+            }}>Log Unsuccessful</Button>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
+      </TableCell>
+    </TableRow>
+  );
+
   return (
-    <div className="space-y-4" ref={listRef}>
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-foreground">Step 2: Lead Generation</h1>
-          <p className="text-sm text-muted-foreground">{leads.length} total leads</p>
+          <p className="text-sm text-muted-foreground">{myProspects.length} assigned prospects</p>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm"><Plus className="w-4 h-4 mr-1" /> Add Lead <ChevronDown className="w-3 h-3 ml-1" /></Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => { resetForm(); setAddMode("import"); }}>
-              <Import className="w-4 h-4 mr-2" /> Import from Prospect
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => { resetForm(); setAddMode("fresh"); }}>
-              <FileText className="w-4 h-4 mr-2" /> Create Fresh Lead
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button size="sm" onClick={openAddNewLead}><Plus className="w-4 h-4 mr-1" /> Add New Lead</Button>
       </div>
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={v => setTab(v as any)}>
         <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="fresh" className="text-xs">First Call/Visit ({counts.fresh})</TabsTrigger>
-          <TabsTrigger value="revisit" className="text-xs">Re-visits ({counts.revisit})</TabsTrigger>
-          <TabsTrigger value="dropped" className="text-xs">Drop-outs ({counts.dropped})</TabsTrigger>
+          <TabsTrigger value="available" className="text-xs">Available Prospects ({counts.available})</TabsTrigger>
+          <TabsTrigger value="revisit" className="text-xs">Revisit ({counts.revisit})</TabsTrigger>
+          <TabsTrigger value="dropouts" className="text-xs">Drop-outs ({counts.dropouts})</TabsTrigger>
         </TabsList>
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-2 mt-3">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search name, pincode..." className="pl-8 h-9 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
+            <Input placeholder="Search name, locality..." className="pl-8 h-9 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <Select value={filterPincode} onValueChange={setFilterPincode}>
-            <SelectTrigger className="w-full sm:w-[140px] h-9 text-xs"><SelectValue placeholder="All Pincodes" /></SelectTrigger>
+          <Select value={filterLocality} onValueChange={setFilterLocality}>
+            <SelectTrigger className="w-full sm:w-[160px] h-9 text-xs"><SelectValue placeholder="All Localities" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Pincodes</SelectItem>
-              {pincodes.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+              <SelectItem value="all">All Localities</SelectItem>
+              {localities.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-full sm:w-[140px] h-9 text-xs"><SelectValue placeholder="All Statuses" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="new">New</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="qualified">Qualified</SelectItem>
-              <SelectItem value="rescheduled">Rescheduled</SelectItem>
-              <SelectItem value="failed">Failed</SelectItem>
-              <SelectItem value="incomplete">Incomplete</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="flex gap-1">
-            <Button size="sm" variant={sortBy === "call_count" ? "secondary" : "outline"} className="text-xs h-9" onClick={() => toggleSort("call_count")}>
-              <PhoneCall className="w-3 h-3 mr-1" /> Calls <ArrowUpDown className="w-3 h-3 ml-1" />
-            </Button>
-            <Button size="sm" variant={sortBy === "visit_count" ? "secondary" : "outline"} className="text-xs h-9" onClick={() => toggleSort("visit_count")}>
-              <Eye className="w-3 h-3 mr-1" /> Visits <ArrowUpDown className="w-3 h-3 ml-1" />
-            </Button>
-          </div>
         </div>
 
-        {/* Lead Cards */}
-        <TabsContent value={tab} className="mt-3">
-          {loading ? (
-            <div className="p-8 text-center text-muted-foreground text-sm">Loading leads...</div>
-          ) : filtered.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground text-sm">No leads found</div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {filtered.map(l => (
-                <Card key={l.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-sm truncate">{l.client_name}</p>
-                        <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                          <MapPin className="w-3 h-3 shrink-0" /> {l.locality || l.pincode}
-                        </p>
-                      </div>
-                      <Badge variant="outline" className={`text-[10px] shrink-0 ${statusColors[l.status] || ""}`}>
-                        {l.status.replace("_", " ")}
-                      </Badge>
-                    </div>
-                    {l.contact_number && (
-                      <p className="text-xs flex items-center gap-1 text-muted-foreground">
-                        <Phone className="w-3 h-3" /> {l.contact_number}
-                      </p>
+        {/* Available Prospects Tab */}
+        <TabsContent value="available" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Name</TableHead>
+                      <TableHead className="text-xs">Locality</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                    ) : availableProspects.length === 0 ? (
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No available prospects assigned to you.</TableCell></TableRow>
+                    ) : (
+                      availableProspects.map(p => renderProspectRow(p, true))
                     )}
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1"><PhoneCall className="w-3 h-3" /> {l.call_count || 0} calls</span>
-                      <span className="flex items-center gap-1"><Eye className="w-3 h-3" /> {l.visit_count || 0} visits</span>
-                      {l.last_activity_date && (
-                        <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {format(new Date(l.last_activity_date), "dd MMM")}</span>
-                      )}
-                    </div>
-                    {l.remarks && (
-                      <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{l.remarks}</p>
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Revisit Tab */}
+        <TabsContent value="revisit" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Name</TableHead>
+                      <TableHead className="text-xs">Locality</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                    ) : revisitProspects.length === 0 ? (
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No prospects in revisit queue.</TableCell></TableRow>
+                    ) : (
+                      revisitProspects.map(p => renderProspectRow(p, true))
                     )}
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" className="text-xs flex-1 h-8" onClick={() => setCallLogOpen(l.id)}>
-                        <PhoneCall className="w-3 h-3 mr-1" /> Log Call
-                      </Button>
-                      <Button size="sm" variant="outline" className="text-xs flex-1 h-8" onClick={() => setVisitLogOpen(l.id)}>
-                        <MapPin className="w-3 h-3 mr-1" /> Log Visit
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Drop-outs Tab */}
+        <TabsContent value="dropouts" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Name</TableHead>
+                      <TableHead className="text-xs">Locality</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
+                      <TableHead className="text-xs">Info</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                    ) : droppedProspects.length === 0 ? (
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No dropped prospects.</TableCell></TableRow>
+                    ) : (
+                      droppedProspects.map(p => (
+                        <TableRow key={p.id} className="text-sm">
+                          <TableCell className="font-medium max-w-[180px] truncate">{p.restaurant_name}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
+                          <TableCell className="text-xs font-mono hidden sm:table-cell">{p.pincode}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">Dropped</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 
-      {/* Add Lead Dialog */}
-      <Dialog open={!!addMode} onOpenChange={open => { if (!open) { setAddMode(null); resetForm(); } }}>
+      {/* Create Lead Dialog (from prospect) */}
+      <Dialog open={createLeadOpen} onOpenChange={open => { if (!open) { setCreateLeadOpen(false); resetForm(); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{addMode === "import" ? "Import Lead from Prospect" : "Create Fresh Lead"}</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Create Lead</DialogTitle></DialogHeader>
           {renderLeadForm()}
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" size="sm" onClick={() => { setIncompleteOpen(true); }} disabled={!form.client_name || !form.pincode}>
+            <Button variant="outline" size="sm" onClick={() => setIncompleteOpen(true)} disabled={!form.client_name || !form.pincode}>
               <CalendarIcon className="w-3 h-3 mr-1" /> Save as Incomplete
             </Button>
             <div className="flex gap-2">
               <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-              <Button size="sm" onClick={handleAddLead} disabled={!isFormValid}>Save Lead</Button>
+              <Button size="sm" onClick={handleSaveLead} disabled={!form.client_name || !form.pincode}>Save Lead</Button>
             </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Save as Incomplete - Re-visit Date Picker */}
+      {/* Add New Lead Dialog (no pre-fill) */}
+      <Dialog open={addNewLeadOpen} onOpenChange={open => { if (!open) { setAddNewLeadOpen(false); resetForm(); } }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Add New Lead</DialogTitle></DialogHeader>
+          {renderLeadForm()}
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" size="sm" onClick={() => setIncompleteOpen(true)} disabled={!form.client_name || !form.pincode}>
+              <CalendarIcon className="w-3 h-3 mr-1" /> Save as Incomplete
+            </Button>
+            <div className="flex gap-2">
+              <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+              <Button size="sm" onClick={handleSaveLead} disabled={!form.client_name || !form.pincode}>Save Lead</Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Save as Incomplete - Date/Time Picker */}
       <Dialog open={incompleteOpen} onOpenChange={setIncompleteOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle className="text-base">Schedule Re-visit Date</DialogTitle></DialogHeader>
-          <div className="flex justify-center">
-            <Calendar mode="single" selected={revisitDate} onSelect={setRevisitDate} initialFocus className="p-3 pointer-events-auto" />
+          <DialogHeader><DialogTitle className="text-base">Schedule Re-visit</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="flex justify-center">
+              <Calendar mode="single" selected={revisitDate} onSelect={setRevisitDate} initialFocus className="p-3 pointer-events-auto" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Time (optional)</Label>
+              <Input type="time" value={revisitTime} onChange={e => setRevisitTime(e.target.value)} />
+            </div>
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
@@ -479,44 +587,40 @@ export default function LeadsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Log Call Dialog */}
-      <Dialog open={!!callLogOpen} onOpenChange={open => { if (!open) setCallLogOpen(null); }}>
+      {/* Log Unsuccessful Attempt Dialog */}
+      <Dialog open={unsuccessfulOpen} onOpenChange={open => { if (!open) { setUnsuccessfulOpen(false); setUnsuccessfulProspectId(null); } }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle className="text-base">Log Call</DialogTitle></DialogHeader>
-          <div className="grid gap-3">
+          <DialogHeader><DialogTitle className="text-base">Log Unsuccessful Attempt</DialogTitle></DialogHeader>
+          <div className="space-y-3">
             <div className="space-y-1">
-              <Label className="text-xs">Outcome *</Label>
-              <Select value={callForm.outcome} onValueChange={v => setCallForm(f => ({ ...f, outcome: v }))}>
-                <SelectTrigger className="text-xs"><SelectValue placeholder="Select outcome" /></SelectTrigger>
-                <SelectContent>{callOutcomes.map(o => <SelectItem key={o} value={o} className="text-xs">{o}</SelectItem>)}</SelectContent>
-              </Select>
+              <Label className="text-xs">Reason *</Label>
+              <RadioGroup value={unsuccessfulReason} onValueChange={setUnsuccessfulReason} className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="Not Connected" id="reason-1" />
+                  <Label htmlFor="reason-1" className="text-sm cursor-pointer">Not Connected</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="Connected - Call Later" id="reason-2" />
+                  <Label htmlFor="reason-2" className="text-sm cursor-pointer">Connected - Call Later</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="Connected - Not Interested" id="reason-3" />
+                  <Label htmlFor="reason-3" className="text-sm cursor-pointer">Connected - Not Interested</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="Drop" id="reason-4" />
+                  <Label htmlFor="reason-4" className="text-sm cursor-pointer">Drop</Label>
+                </div>
+              </RadioGroup>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Remarks</Label>
-              <Textarea placeholder="Call notes..." value={callForm.remarks} onChange={e => setCallForm(f => ({ ...f, remarks: e.target.value }))} rows={2} />
+              <Label className="text-xs">Remarks *</Label>
+              <Textarea placeholder="Details..." value={unsuccessfulRemarks} onChange={e => setUnsuccessfulRemarks(e.target.value)} rows={2} />
             </div>
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" onClick={handleLogCall} disabled={!callForm.outcome}>Save Call Log</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Log Visit Dialog */}
-      <Dialog open={!!visitLogOpen} onOpenChange={open => { if (!open) setVisitLogOpen(null); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle className="text-base">Log Visit</DialogTitle></DialogHeader>
-          <div className="grid gap-3">
-            <p className="text-xs text-muted-foreground">Visit timestamp: {format(new Date(), "dd MMM yyyy, HH:mm")}</p>
-            <div className="space-y-1">
-              <Label className="text-xs">Remarks</Label>
-              <Textarea placeholder="Visit notes..." value={visitForm.remarks} onChange={e => setVisitForm(f => ({ ...f, remarks: e.target.value }))} rows={2} />
-            </div>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" onClick={handleLogVisit}>Save Visit Log</Button>
+            <Button size="sm" onClick={handleLogUnsuccessful} disabled={!unsuccessfulReason || !unsuccessfulRemarks}>Submit</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

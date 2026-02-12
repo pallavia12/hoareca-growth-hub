@@ -127,37 +127,33 @@ serve(async (req) => {
       { step_number: 4, reason_text: "Commercial Terms Issue", is_active: true },
       { step_number: 4, reason_text: "Other", is_active: true },
     ]);
-    // Update some leads to qualified with rich data
+    // Seed 3 sample prospects with different tags
+    const sampleProspects = [
+      { restaurant_name: "The Avocado Café", pincode: "560034", locality: "Koramangala", location: "100ft Road, Koramangala 4th Block, Bangalore", source: "Google Maps", cuisine_type: "Cafe", tag: "New", status: "assigned", mapped_to: "agent@ninjacart.com" },
+      { restaurant_name: "Tokyo Ramen House", pincode: "560001", locality: "MG Road", location: "Brigade Road, MG Road, Bangalore", source: "Zomato", cuisine_type: "Pan-Asian", tag: "In Progress", status: "assigned", mapped_to: "leadtaker@ninjacart.com" },
+      { restaurant_name: "Green Bowl Kitchen", pincode: "560034", locality: "Indiranagar", location: "12th Main, HAL 2nd Stage, Indiranagar, Bangalore", source: "Referral", cuisine_type: "Continental", tag: "Qualified", status: "assigned", mapped_to: "kam@ninjacart.com" },
+    ];
+    for (const p of sampleProspects) {
+      const { data: existing } = await supabase.from("prospects").select("id").eq("restaurant_name", p.restaurant_name).maybeSingle();
+      if (existing) { await supabase.from("prospects").update(p).eq("id", existing.id); }
+      else { await supabase.from("prospects").insert(p); }
+    }
+
+    // Ensure qualified leads
     const { data: allLeads } = await supabase.from("leads").select("id, status").order("created_at", { ascending: false }).limit(20);
     if (allLeads && allLeads.length > 0) {
-      const toQualify = allLeads.filter((l: any) => l.status !== "qualified").slice(0, 4);
+      const toQualify = allLeads.filter((l: any) => l.status !== "qualified").slice(0, 2);
       const qualifyData = [
-        { purchase_manager_name: "Ramesh Kumar", pm_contact: "9876543210", avocado_consumption: "5-10 kg/week", estimated_monthly_spend: 15000, contact_number: "9988776655" },
-        { purchase_manager_name: "Priya Sharma", pm_contact: "9123456780", avocado_consumption: "3-5 kg/week", estimated_monthly_spend: 8000, contact_number: "9900112233" },
-        { purchase_manager_name: "Anil Mehta", pm_contact: "9345678901", avocado_consumption: "10-15 kg/week", estimated_monthly_spend: 25000, contact_number: "9012345678" },
-        { purchase_manager_name: "Deepa Nair", pm_contact: "9567890123", avocado_consumption: "8-12 kg/week", estimated_monthly_spend: 20000, contact_number: "9234567890" },
+        { purchase_manager_name: "Ramesh Kumar", pm_contact: "9876543210", avocado_consumption: "yes_imported", estimated_monthly_spend: 15000, contact_number: "9988776655" },
+        { purchase_manager_name: "Priya Sharma", pm_contact: "9123456780", avocado_consumption: "yes_indian", estimated_monthly_spend: 8000, contact_number: "9900112233" },
       ];
       for (let i = 0; i < toQualify.length; i++) {
         await supabase.from("leads").update({ status: "qualified", ...qualifyData[i] }).eq("id", toQualify[i].id);
       }
-
-      // Add pending_visit sample orders for first 2 qualified leads
-      const { data: qualifiedLeads } = await supabase.from("leads").select("id").eq("status", "qualified").limit(2);
-      if (qualifiedLeads && qualifiedLeads.length >= 2) {
-        // Check if orders already exist for these leads
-        const { data: existingOrders } = await supabase.from("sample_orders").select("lead_id").in("lead_id", qualifiedLeads.map((l: any) => l.id));
-        const existingLeadIds = new Set((existingOrders || []).map((o: any) => o.lead_id));
-        const newOrders = [];
-        if (!existingLeadIds.has(qualifiedLeads[0].id)) {
-          newOrders.push({ lead_id: qualifiedLeads[0].id, status: "pending_visit", delivery_address: "45 Church Street, Koramangala", delivery_date: "2026-02-18", sample_qty_units: 5, demand_per_week_kg: 8, remarks: "Interested in Hass variety, stage 3-4 ripeness", visit_date: "2026-02-15" });
-        }
-        if (!existingLeadIds.has(qualifiedLeads[1].id)) {
-          newOrders.push({ lead_id: qualifiedLeads[1].id, status: "pending_visit", delivery_address: "12 MG Road, Brigade Layout", delivery_date: "2026-02-20", sample_qty_units: 3, demand_per_week_kg: 5, remarks: "Trial order for new menu items", visit_date: "2026-02-17" });
-        }
-        if (newOrders.length > 0) {
-          await supabase.from("sample_orders").insert(newOrders);
-        }
-      }
+    }
+    const { data: ql } = await supabase.from("leads").select("id").eq("status", "qualified").limit(1);
+    if (!ql || ql.length === 0) {
+      await supabase.from("leads").insert({ client_name: "The Avocado Café", pincode: "560034", locality: "Koramangala", outlet_address: "100ft Road, Koramangala 4th Block", contact_number: "+91 98765 43210", purchase_manager_name: "Ravi Kumar", pm_contact: "+91 98765 43211", status: "qualified", avocado_consumption: "yes_imported", estimated_monthly_spend: 25000 });
     }
 
     return new Response(JSON.stringify({ success: true, users: results }), {

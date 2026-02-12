@@ -300,14 +300,18 @@ export type Database = {
           created_at: string
           created_by: string | null
           current_supplier: string | null
+          email: string | null
           estimated_monthly_spend: number | null
           franchised: boolean | null
           geo_lat: number | null
           geo_lng: number | null
           gst_id: string | null
           id: string
+          instagram_url: string | null
           last_activity_date: string | null
+          linkedin_url: string | null
           locality: string | null
+          others_info: string | null
           outlet_address: string | null
           outlet_photo_url: string | null
           pincode: string
@@ -316,6 +320,7 @@ export type Database = {
           purchase_manager_name: string | null
           remarks: string | null
           status: string
+          swiggy_zomato_url: string | null
           updated_at: string
           visit_count: number | null
         }
@@ -330,14 +335,18 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           current_supplier?: string | null
+          email?: string | null
           estimated_monthly_spend?: number | null
           franchised?: boolean | null
           geo_lat?: number | null
           geo_lng?: number | null
           gst_id?: string | null
           id?: string
+          instagram_url?: string | null
           last_activity_date?: string | null
+          linkedin_url?: string | null
           locality?: string | null
+          others_info?: string | null
           outlet_address?: string | null
           outlet_photo_url?: string | null
           pincode: string
@@ -346,6 +355,7 @@ export type Database = {
           purchase_manager_name?: string | null
           remarks?: string | null
           status?: string
+          swiggy_zomato_url?: string | null
           updated_at?: string
           visit_count?: number | null
         }
@@ -360,14 +370,18 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           current_supplier?: string | null
+          email?: string | null
           estimated_monthly_spend?: number | null
           franchised?: boolean | null
           geo_lat?: number | null
           geo_lng?: number | null
           gst_id?: string | null
           id?: string
+          instagram_url?: string | null
           last_activity_date?: string | null
+          linkedin_url?: string | null
           locality?: string | null
+          others_info?: string | null
           outlet_address?: string | null
           outlet_photo_url?: string | null
           pincode?: string
@@ -376,6 +390,7 @@ export type Database = {
           purchase_manager_name?: string | null
           remarks?: string | null
           status?: string
+          swiggy_zomato_url?: string | null
           updated_at?: string
           visit_count?: number | null
         }
