@@ -16,10 +16,23 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { Progress } from "@/components/ui/progress";
 import {
   MapPin, Users, Package, Layers, Plus, Pencil, Trash2, Search,
+  Database, Phone, ShoppingBag, FileSignature, TrendingUp, PhoneCall, IndianRupee,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
+
+const metrics = [
+  { label: "Total Prospects", value: "147", icon: Database, color: "text-primary" },
+  { label: "Leads Generated", value: "68", icon: Users, color: "text-secondary" },
+  { label: "Sample Orders", value: "24", icon: ShoppingBag, color: "text-accent" },
+  { label: "Agreements Signed", value: "12", icon: FileSignature, color: "text-primary" },
+  { label: "Today's Calls", value: "18", icon: PhoneCall, color: "text-info" },
+  { label: "Today's Visits", value: "5", icon: MapPin, color: "text-secondary" },
+  { label: "Conversion Rate", value: "17.6%", icon: TrendingUp, color: "text-primary" },
+  { label: "Pipeline Value", value: "₹4.2L/wk", icon: IndianRupee, color: "text-accent" },
+];
 
 type PincodeMap = Tables<"pincode_persona_map">;
 type SkuMapping = Tables<"sku_mapping">;
@@ -253,6 +266,21 @@ export default function AdminDashboardPage() {
       <div>
         <h1 className="text-xl font-bold text-foreground">Admin Dashboard</h1>
         <p className="text-sm text-muted-foreground">Manage pincode mappings, SKU specs, and stage configurations</p>
+      </div>
+
+      {/* Metrics */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {metrics.map((m) => (
+          <Card key={m.label} className="hover:shadow-md transition-shadow cursor-pointer">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <m.icon className={`w-5 h-5 ${m.color} opacity-70`} />
+              </div>
+              <p className="text-2xl font-bold mt-2">{m.value}</p>
+              <p className="text-xs text-muted-foreground">{m.label}</p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
