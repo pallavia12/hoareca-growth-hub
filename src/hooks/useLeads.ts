@@ -25,12 +25,12 @@ export function useLeads() {
       .select("*")
       .order("created_at", { ascending: false });
     if (error) {
-      toast({ title: "Error fetching leads", description: error.message, variant: "destructive" });
+      console.error("Error fetching leads:", error.message);
     } else {
       setLeads(data || []);
     }
     setLoading(false);
-  }, [toast]);
+  }, []);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 

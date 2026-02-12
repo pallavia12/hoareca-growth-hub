@@ -26,12 +26,12 @@ export function useProspects() {
       .select("*")
       .order("created_at", { ascending: false });
     if (error) {
-      toast({ title: "Error fetching prospects", description: error.message, variant: "destructive" });
+      console.error("Error fetching prospects:", error.message);
     } else {
       setProspects(data || []);
     }
     setLoading(false);
-  }, [toast]);
+  }, []);
 
   useEffect(() => { fetchProspects(); }, [fetchProspects]);
 
