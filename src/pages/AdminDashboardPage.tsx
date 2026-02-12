@@ -39,16 +39,16 @@ const roleLabels: Record<string, string> = {
   admin: "Admin",
 };
 
-// Bangalore locality coordinates for visual map
-const localityCoords: Record<string, { x: number; y: number; color: string }> = {
-  "Koramangala": { x: 48, y: 55, color: "#4F46E5" },
-  "Indiranagar": { x: 55, y: 38, color: "#059669" },
-  "Whitefield": { x: 78, y: 35, color: "#D97706" },
-  "Jayanagar": { x: 38, y: 65, color: "#DC2626" },
-  "MG Road": { x: 50, y: 42, color: "#7C3AED" },
-  "HSR Layout": { x: 52, y: 68, color: "#0891B2" },
-  "Marathahalli": { x: 70, y: 42, color: "#EA580C" },
-  "Basavanagudi": { x: 35, y: 58, color: "#BE185D" },
+// Bangalore locality coordinates with rectangular boundaries
+const localityCoords: Record<string, { x: number; y: number; w: number; h: number; color: string }> = {
+  "Koramangala": { x: 40, y: 48, w: 18, h: 14, color: "#4F46E5" },
+  "Indiranagar": { x: 48, y: 30, w: 16, h: 12, color: "#059669" },
+  "Whitefield": { x: 68, y: 26, w: 20, h: 14, color: "#D97706" },
+  "Jayanagar": { x: 28, y: 58, w: 18, h: 14, color: "#DC2626" },
+  "MG Road": { x: 42, y: 34, w: 14, h: 10, color: "#7C3AED" },
+  "HSR Layout": { x: 44, y: 62, w: 18, h: 14, color: "#0891B2" },
+  "Marathahalli": { x: 60, y: 34, w: 16, h: 14, color: "#EA580C" },
+  "Basavanagudi": { x: 24, y: 48, w: 16, h: 14, color: "#BE185D" },
 };
 
 export default function AdminDashboardPage() {
@@ -60,6 +60,7 @@ export default function AdminDashboardPage() {
   const [pincodeLoading, setPincodeLoading] = useState(true);
   const [pincodeSearch, setPincodeSearch] = useState("");
   const [selectedPincode, setSelectedPincode] = useState<string | null>(null);
+  const [pincodeDialogOpen, setPincodeDialogOpen] = useState(false);
   const [addMappingOpen, setAddMappingOpen] = useState(false);
   const [newPincode, setNewPincode] = useState("");
   const [newLocality, setNewLocality] = useState("");
@@ -79,12 +80,12 @@ export default function AdminDashboardPage() {
   const [stageData, setStageData] = useState<StageMapping[]>([]);
   const [stageLoading, setStageLoading] = useState(true);
   const [addStageOpen, setAddStageOpen] = useState(false);
+  const [editStage, setEditStage] = useState<StageMapping | null>(null);
   const [newStageNumber, setNewStageNumber] = useState("");
   const [newStageDesc, setNewStageDesc] = useState("");
   const [newDaysMin, setNewDaysMin] = useState("");
   const [newDaysMax, setNewDaysMax] = useState("");
 
-  // Fetch all data
   useEffect(() => {
     fetchPincodeData();
     fetchSkuData();
@@ -130,6 +131,11 @@ export default function AdminDashboardPage() {
   }, [pincodeGroups, pincodeSearch]);
 
   const selectedPincodeData = selectedPincode ? pincodeGroups[selectedPincode] : null;
+
+  const openPincodeDialog = (pincode: string) => {
+    setSelectedPincode(pincode);
+    setPincodeDialogOpen(true);
+  };
 
   // Add pincode mapping
   const handleAddMapping = async () => {
@@ -206,6 +212,33 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // Edit Stage
+  const openEditStage = (stage: StageMapping) => {
+    setEditStage(stage);
+    setNewStageNumber(String(stage.stage_number));
+    setNewStageDesc(stage.stage_description);
+    setNewDaysMin(String(stage.consumption_days_min));
+    setNewDaysMax(String(stage.consumption_days_max));
+  };
+
+  const handleEditStage = async () => {
+    if (!editStage || !newStageNumber || !newStageDesc || !newDaysMin || !newDaysMax) return;
+    const { error } = await supabase.from("stage_mapping").update({
+      stage_number: Number(newStageNumber),
+      stage_description: newStageDesc,
+      consumption_days_min: Number(newDaysMin),
+      consumption_days_max: Number(newDaysMax),
+    }).eq("id", editStage.id);
+    if (error) {
+      toast({ title: "Error updating stage", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Stage updated" });
+      setEditStage(null);
+      setNewStageNumber(""); setNewStageDesc(""); setNewDaysMin(""); setNewDaysMax("");
+      fetchStageData();
+    }
+  };
+
   const handleDeleteStage = async (id: string) => {
     const { error } = await supabase.from("stage_mapping").delete().eq("id", id);
     if (error) {
@@ -248,14 +281,13 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="grid lg:grid-cols-2 gap-4">
-            {/* Map View */}
+            {/* Map View with rectangular boundaries */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Bangalore Locality Map</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="relative w-full aspect-square bg-muted/30 rounded-lg border overflow-hidden">
-                  {/* Simple SVG map */}
                   <svg viewBox="0 0 100 100" className="w-full h-full">
                     {/* Grid lines */}
                     {[20, 40, 60, 80].map(v => (
@@ -265,8 +297,8 @@ export default function AdminDashboardPage() {
                       </g>
                     ))}
 
-                    {/* Locality markers */}
-                    {Object.entries(localityCoords).map(([name, { x, y, color }]) => {
+                    {/* Locality rectangular markers */}
+                    {Object.entries(localityCoords).map(([name, { x, y, w, h, color }]) => {
                       const pincode = Object.keys(pincodeGroups).find(p => pincodeGroups[p].locality === name);
                       const isSelected = selectedPincode === pincode;
                       const count = pincode ? pincodeGroups[pincode].mappings.length : 0;
@@ -274,34 +306,35 @@ export default function AdminDashboardPage() {
                         <g
                           key={name}
                           className="cursor-pointer"
-                          onClick={() => pincode && setSelectedPincode(isSelected ? null : pincode)}
+                          onClick={() => pincode && openPincodeDialog(pincode)}
                         >
-                          {/* Area circle */}
-                          <circle
-                            cx={x} cy={y}
-                            r={isSelected ? 8 : 6}
+                          {/* Rectangular boundary */}
+                          <rect
+                            x={x} y={y}
+                            width={w} height={h}
+                            rx={1.5}
                             fill={color}
-                            opacity={isSelected ? 0.3 : 0.15}
+                            opacity={isSelected ? 0.35 : 0.15}
                             stroke={color}
-                            strokeWidth={isSelected ? 0.8 : 0.4}
+                            strokeWidth={isSelected ? 1 : 0.5}
                           />
-                          {/* Center dot */}
-                          <circle cx={x} cy={y} r={isSelected ? 2.5 : 2} fill={color} />
                           {/* Label */}
                           <text
-                            x={x} y={y - (isSelected ? 10 : 8)}
+                            x={x + w / 2} y={y + h / 2 - 1}
                             textAnchor="middle"
-                            fontSize={isSelected ? 3.5 : 3}
-                            fontWeight={isSelected ? "bold" : "normal"}
-                            fill="hsl(var(--foreground))"
+                            dominantBaseline="middle"
+                            fontSize={isSelected ? 3 : 2.5}
+                            fontWeight={isSelected ? "bold" : "500"}
+                            fill={color}
                           >
                             {name}
                           </text>
                           {pincode && (
                             <text
-                              x={x} y={y + (isSelected ? 12 : 10)}
+                              x={x + w / 2} y={y + h / 2 + 3}
                               textAnchor="middle"
-                              fontSize={2.5}
+                              dominantBaseline="middle"
+                              fontSize={2}
                               fill="hsl(var(--muted-foreground))"
                             >
                               {pincode} · {count} roles
@@ -315,89 +348,40 @@ export default function AdminDashboardPage() {
               </CardContent>
             </Card>
 
-            {/* Pincode List / Detail */}
+            {/* Pincode List */}
             <div className="space-y-3">
-              {selectedPincodeData ? (
-                // Detail view for selected pincode
-                <Card>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <MapPin className="w-4 h-4" />
-                        {selectedPincode} — {selectedPincodeData.locality}
-                      </CardTitle>
-                      <Button variant="ghost" size="sm" className="text-xs" onClick={() => setSelectedPincode(null)}>
-                        ← Back
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {(["calling_agent", "lead_taker", "kam", "admin"] as const).map(role => {
-                      const mappings = selectedPincodeData.mappings.filter(m => m.role === role);
-                      return (
-                        <div key={role} className="space-y-1">
-                          <p className="text-xs font-medium flex items-center gap-2">
-                            <Badge variant="outline" className={`text-[10px] ${roleBadgeColors[role]}`}>
-                              {roleLabels[role]}
-                            </Badge>
-                            <span className="text-muted-foreground">({mappings.length})</span>
-                          </p>
-                          {mappings.length === 0 ? (
-                            <p className="text-xs text-muted-foreground pl-2">No assignments</p>
-                          ) : (
-                            <div className="space-y-1 pl-2">
-                              {mappings.map(m => (
-                                <div key={m.id} className="flex items-center justify-between text-xs bg-muted/50 px-2 py-1.5 rounded">
-                                  <span>{m.user_email}</span>
-                                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive" onClick={() => handleDeleteMapping(m.id)}>
-                                    <Trash2 className="w-3 h-3" />
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
+              {pincodeLoading ? (
+                <p className="text-sm text-muted-foreground p-4">Loading...</p>
+              ) : filteredPincodes.length === 0 ? (
+                <p className="text-sm text-muted-foreground p-4">No pincodes found</p>
               ) : (
-                // List view
-                <>
-                  {pincodeLoading ? (
-                    <p className="text-sm text-muted-foreground p-4">Loading...</p>
-                  ) : filteredPincodes.length === 0 ? (
-                    <p className="text-sm text-muted-foreground p-4">No pincodes found</p>
-                  ) : (
-                    filteredPincodes.map(([pin, group]) => (
-                      <Card
-                        key={pin}
-                        className="cursor-pointer hover:shadow-md transition-shadow"
-                        onClick={() => setSelectedPincode(pin)}
-                      >
-                        <CardContent className="p-3">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="font-semibold text-sm">{pin} — {group.locality}</p>
-                              <div className="flex gap-1 mt-1 flex-wrap">
-                                {(["calling_agent", "lead_taker", "kam", "admin"] as const).map(role => {
-                                  const count = group.mappings.filter(m => m.role === role).length;
-                                  if (count === 0) return null;
-                                  return (
-                                    <Badge key={role} variant="outline" className={`text-[10px] ${roleBadgeColors[role]}`}>
-                                      {roleLabels[role]}: {count}
-                                    </Badge>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                            <Users className="w-4 h-4 text-muted-foreground" />
+                filteredPincodes.map(([pin, group]) => (
+                  <Card
+                    key={pin}
+                    className="cursor-pointer hover:shadow-md transition-shadow"
+                    onClick={() => openPincodeDialog(pin)}
+                  >
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold text-sm">{pin} — {group.locality}</p>
+                          <div className="flex gap-1 mt-1 flex-wrap">
+                            {(["calling_agent", "lead_taker", "kam", "admin"] as const).map(role => {
+                              const count = group.mappings.filter(m => m.role === role).length;
+                              if (count === 0) return null;
+                              return (
+                                <Badge key={role} variant="outline" className={`text-[10px] ${roleBadgeColors[role]}`}>
+                                  {roleLabels[role]}: {count}
+                                </Badge>
+                              );
+                            })}
                           </div>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </>
+                        </div>
+                        <Users className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
               )}
             </div>
           </div>
@@ -417,6 +401,7 @@ export default function AdminDashboardPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="text-xs">SKU ID</TableHead>
                     <TableHead className="text-xs">Grammage (g)</TableHead>
                     <TableHead className="text-xs">SKU Name</TableHead>
                     <TableHead className="text-xs">Lot Size (kg)</TableHead>
@@ -426,12 +411,13 @@ export default function AdminDashboardPage() {
                 </TableHeader>
                 <TableBody>
                   {skuLoading ? (
-                    <TableRow><TableCell colSpan={5} className="text-center text-sm text-muted-foreground">Loading...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="text-center text-sm text-muted-foreground">Loading...</TableCell></TableRow>
                   ) : skuData.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center text-sm text-muted-foreground">No SKU mappings</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="text-center text-sm text-muted-foreground">No SKU mappings</TableCell></TableRow>
                   ) : (
                     skuData.map(s => (
                       <TableRow key={s.id}>
+                        <TableCell className="text-xs font-mono text-muted-foreground">{s.id.slice(0, 8)}</TableCell>
                         <TableCell className="text-sm font-medium">{s.grammage}g</TableCell>
                         <TableCell className="text-sm">{s.sku_name}</TableCell>
                         <TableCell className="text-sm">{s.lot_size ?? <Badge variant="outline" className="text-[10px] bg-warning/10 text-warning">Custom needed</Badge>}</TableCell>
@@ -454,7 +440,7 @@ export default function AdminDashboardPage() {
         <TabsContent value="stage" className="mt-4 space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">Customer consumption days → Avocado ripening stage</p>
-            <Button size="sm" onClick={() => setAddStageOpen(true)}>
+            <Button size="sm" onClick={() => { setEditStage(null); setNewStageNumber(""); setNewStageDesc(""); setNewDaysMin(""); setNewDaysMax(""); setAddStageOpen(true); }}>
               <Plus className="w-4 h-4 mr-1" /> Add Stage
             </Button>
           </div>
@@ -474,9 +460,14 @@ export default function AdminDashboardPage() {
                         <Badge variant="outline" className="text-xs font-bold">
                           Stage {s.stage_number}
                         </Badge>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive" onClick={() => handleDeleteStage(s.id)}>
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => openEditStage(s)}>
+                            <Pencil className="w-3 h-3" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive" onClick={() => handleDeleteStage(s.id)}>
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
                       </div>
                       <p className="text-sm font-medium">{s.stage_description}</p>
                       <p className="text-xs text-muted-foreground">
@@ -496,7 +487,7 @@ export default function AdminDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-1">
-                {stageData.map((s, i) => {
+                {stageData.map(s => {
                   const colors = ["", "bg-green-500", "bg-yellow-500", "bg-orange-500", "bg-red-500"];
                   const width = s.stage_number === 1 ? "flex-[2]" : "flex-1";
                   return (
@@ -512,6 +503,52 @@ export default function AdminDashboardPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Pincode Detail Dialog */}
+      <Dialog open={pincodeDialogOpen} onOpenChange={setPincodeDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="w-4 h-4" />
+              {selectedPincode} — {selectedPincodeData?.locality}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {(["calling_agent", "lead_taker", "kam", "admin"] as const).map(role => {
+              const mappings = selectedPincodeData?.mappings.filter(m => m.role === role) || [];
+              return (
+                <div key={role} className="space-y-1.5">
+                  <p className="text-xs font-medium flex items-center gap-2">
+                    <Badge variant="outline" className={`text-[10px] ${roleBadgeColors[role]}`}>
+                      {roleLabels[role]}
+                    </Badge>
+                    <span className="text-muted-foreground">({mappings.length})</span>
+                  </p>
+                  {mappings.length === 0 ? (
+                    <p className="text-xs text-muted-foreground pl-2">No assignments</p>
+                  ) : (
+                    <div className="space-y-1 pl-2">
+                      {mappings.map(m => (
+                        <div key={m.id} className="flex items-center justify-between text-xs bg-muted/50 px-2 py-1.5 rounded">
+                          <span>{m.user_email}</span>
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive" onClick={() => handleDeleteMapping(m.id)}>
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button size="sm" variant="outline" className="text-xs" onClick={() => { setPincodeDialogOpen(false); setAddMappingOpen(true); if (selectedPincode) { setNewPincode(selectedPincode); setNewLocality(selectedPincodeData?.locality || ""); } }}>
+              <Plus className="w-3 h-3 mr-1" /> Add Role to this Pincode
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Pincode Mapping Dialog */}
       <Dialog open={addMappingOpen} onOpenChange={setAddMappingOpen}>
@@ -588,10 +625,10 @@ export default function AdminDashboardPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Stage Dialog */}
-      <Dialog open={addStageOpen} onOpenChange={setAddStageOpen}>
+      {/* Add/Edit Stage Dialog */}
+      <Dialog open={addStageOpen || !!editStage} onOpenChange={(open) => { if (!open) { setAddStageOpen(false); setEditStage(null); setNewStageNumber(""); setNewStageDesc(""); setNewDaysMin(""); setNewDaysMax(""); } }}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Add Stage Mapping</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editStage ? "Edit Stage Mapping" : "Add Stage Mapping"}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -615,8 +652,8 @@ export default function AdminDashboardPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button size="sm" className="text-xs" onClick={handleAddStage} disabled={!newStageNumber || !newStageDesc || !newDaysMin || !newDaysMax}>
-              Add Stage
+            <Button size="sm" className="text-xs" onClick={editStage ? handleEditStage : handleAddStage} disabled={!newStageNumber || !newStageDesc || !newDaysMin || !newDaysMax}>
+              {editStage ? "Save Changes" : "Add Stage"}
             </Button>
           </DialogFooter>
         </DialogContent>
