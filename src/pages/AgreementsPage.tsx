@@ -24,7 +24,7 @@ import { useLeads } from "@/hooks/useLeads";
 import { useToast } from "@/hooks/use-toast";
 import {
   Search, Star, CalendarIcon, Package, MapPin, RotateCcw, XCircle,
-  Send, FileCheck, AlertTriangle, Plus, Clock,
+  Send, FileCheck, AlertTriangle, Clock,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -59,20 +59,19 @@ interface FormErrors {
 }
 
 export default function AgreementsPage() {
-  const { agreements, loading, addAgreement, updateAgreement } = useAgreements();
+  const { agreements, loading, addAgreement, updateAgreement, refetch } = useAgreements();
   const { orders } = useSampleOrders();
   const { leads } = useLeads();
   const partners = useDistributionPartners();
   const slots = useDeliverySlots();
   const { toast } = useToast();
 
-  const [tab, setTab] = useState<"pending" | "negotiating" | "sent" | "revisit" | "dropped">("pending");
+  const [tab, setTab] = useState<"pending" | "negotiating" | "agreement" | "revisit" | "dropped">("pending");
   const [search, setSearch] = useState("");
-  const [createOpen, setCreateOpen] = useState(false);
 
   // Create form state
+  const [createOpen, setCreateOpen] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState("");
-  const [orderSearch, setOrderSearch] = useState("");
   const [rating, setRating] = useState(0);
   const [qualityRemarks, setQualityRemarks] = useState("");
   const [errors, setErrors] = useState<FormErrors>({});
@@ -102,20 +101,16 @@ export default function AgreementsPage() {
   const [revisitDate, setRevisitDate] = useState<Date | undefined>();
   const [revisitRemarks, setRevisitRemarks] = useState("");
 
-  // Completed sample orders (status = sample_ordered)
-  const completedOrders = useMemo(() => {
-    const existingOrderIds = new Set(agreements.map(a => a.sample_order_id));
-    return orders.filter(o => o.status === "sample_ordered" && !existingOrderIds.has(o.id));
-  }, [orders, agreements]);
-
-  const filteredOrders = useMemo(() => {
-    if (!orderSearch) return completedOrders.slice(0, 10);
-    const s = orderSearch.toLowerCase();
-    return completedOrders.filter(o => {
-      const lead = leads.find(l => l.id === o.lead_id);
-      return lead?.client_name?.toLowerCase().includes(s) || lead?.pincode?.includes(s);
-    }).slice(0, 10);
-  }, [completedOrders, orderSearch, leads]);
+  // Sample orders without an agreement = "Quality Pending"
+  const pendingOrders = useMemo(() => {
+    const agreementOrderIds = new Set(agreements.map(a => a.sample_order_id));
+    return orders
+      .filter(o => ["sample_ordered", "sample_delivered"].includes(o.status) && !agreementOrderIds.has(o.id))
+      .map(o => {
+        const lead = leads.find(l => l.id === o.lead_id);
+        return { ...o, lead };
+      });
+  }, [orders, agreements, leads]);
 
   const selectedOrder = useMemo(() => orders.find(o => o.id === selectedOrderId), [orders, selectedOrderId]);
   const selectedLead = useMemo(() => {
@@ -132,27 +127,36 @@ export default function AgreementsPage() {
     });
   }, [agreements, orders, leads]);
 
-  const filtered = useMemo(() => {
+  // Filter pending orders by search
+  const filteredPending = useMemo(() => {
+    if (!search) return pendingOrders;
+    const s = search.toLowerCase();
+    return pendingOrders.filter(o =>
+      o.lead?.client_name?.toLowerCase().includes(s) || o.lead?.pincode?.includes(s)
+    );
+  }, [pendingOrders, search]);
+
+  // Filter agreements by tab
+  const filteredAgreements = useMemo(() => {
     let list = enriched;
     if (search) {
       const s = search.toLowerCase();
       list = list.filter(a => a.lead?.client_name?.toLowerCase().includes(s) || a.lead?.pincode?.includes(s));
     }
-    if (tab === "pending") return list.filter(a => a.status === "pending_feedback");
-    if (tab === "negotiating") return list.filter(a => ["negotiating", "quality_failed"].includes(a.status));
-    if (tab === "sent") return list.filter(a => ["agreement_sent", "signed"].includes(a.status));
+    if (tab === "negotiating") return list.filter(a => ["agreement_sent", "negotiating", "quality_failed", "pending_feedback"].includes(a.status));
+    if (tab === "agreement") return list.filter(a => a.status === "signed");
     if (tab === "revisit") return list.filter(a => a.status === "revisit_needed");
     if (tab === "dropped") return list.filter(a => a.status === "lost");
-    return list;
+    return [];
   }, [enriched, search, tab]);
 
   const counts = useMemo(() => ({
-    pending: enriched.filter(a => a.status === "pending_feedback").length,
-    negotiating: enriched.filter(a => ["negotiating", "quality_failed"].includes(a.status)).length,
-    sent: enriched.filter(a => ["agreement_sent", "signed"].includes(a.status)).length,
+    pending: pendingOrders.length,
+    negotiating: enriched.filter(a => ["agreement_sent", "negotiating", "quality_failed", "pending_feedback"].includes(a.status)).length,
+    agreement: enriched.filter(a => a.status === "signed").length,
     revisit: enriched.filter(a => a.status === "revisit_needed").length,
     dropped: enriched.filter(a => a.status === "lost").length,
-  }), [enriched]);
+  }), [pendingOrders, enriched]);
 
   const marginWarning = useMemo(() => {
     if (!agreedPrice) return false;
@@ -162,7 +166,6 @@ export default function AgreementsPage() {
 
   const resetForm = () => {
     setSelectedOrderId("");
-    setOrderSearch("");
     setRating(0);
     setQualityRemarks("");
     setPricingType("");
@@ -202,12 +205,12 @@ export default function AgreementsPage() {
   };
 
   const handleSave = async () => {
+    if (!selectedOrderId) return;
     const e = validate();
     setErrors(e);
     if (Object.keys(e).length > 0) return;
 
     if (rating < 6) {
-      // Low rating - save with quality_failed status
       const ok = await addAgreement({
         sample_order_id: selectedOrderId,
         quality_feedback: false,
@@ -222,7 +225,6 @@ export default function AgreementsPage() {
       return;
     }
 
-    // Good rating - full agreement
     const ok = await addAgreement({
       sample_order_id: selectedOrderId,
       quality_feedback: true,
@@ -252,26 +254,37 @@ export default function AgreementsPage() {
 
   const handleDrop = async () => {
     if (!dropAgreementId || !dropReason || !dropRemarks.trim()) return;
-    await updateAgreement(dropAgreementId, {
+    const ok = await updateAgreement(dropAgreementId, {
       status: "lost",
       remarks: `[Lost] ${dropReason}: ${dropRemarks}`,
     });
-    toast({ title: "Lead marked as lost" });
-    setDropAgreementId(null);
-    setDropReason("");
-    setDropRemarks("");
+    if (ok) {
+      toast({ title: "Lead marked as lost" });
+      setDropAgreementId(null);
+      setDropReason("");
+      setDropRemarks("");
+    }
   };
 
   const handleRevisit = async () => {
     if (!revisitAgreementId || !revisitDate) return;
-    await updateAgreement(revisitAgreementId, {
+    const ok = await updateAgreement(revisitAgreementId, {
       status: "revisit_needed",
       remarks: `[Re-visit: ${format(revisitDate, "dd MMM yyyy")}] ${revisitRemarks}`,
     });
-    toast({ title: `Re-visit scheduled for ${format(revisitDate, "dd MMM yyyy")}` });
-    setRevisitAgreementId(null);
-    setRevisitDate(undefined);
-    setRevisitRemarks("");
+    if (ok) {
+      toast({ title: `Re-visit scheduled for ${format(revisitDate, "dd MMM yyyy")}` });
+      setRevisitAgreementId(null);
+      setRevisitDate(undefined);
+      setRevisitRemarks("");
+    }
+  };
+
+  // Handle creating agreement from pending card directly
+  const openCreateForOrder = (orderId: string) => {
+    resetForm();
+    setSelectedOrderId(orderId);
+    setCreateOpen(true);
   };
 
   const StarRating = ({ value, onChange }: { value: number; onChange: (v: number) => void }) => (
@@ -286,17 +299,114 @@ export default function AgreementsPage() {
 
   const FieldError = ({ msg }: { msg?: string }) => msg ? <p className="text-xs text-destructive mt-0.5">{msg}</p> : null;
 
+  // Render a pending sample order card
+  const renderPendingCard = (o: typeof pendingOrders[0]) => (
+    <Card key={o.id} className="hover:shadow-md transition-shadow">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start justify-between">
+          <div className="min-w-0">
+            <p className="font-semibold text-sm truncate">{o.lead?.client_name || "Unknown"}</p>
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <MapPin className="w-3 h-3" /> {o.lead?.locality || o.lead?.pincode || "—"}
+            </p>
+          </div>
+          <Badge variant="outline" className="bg-muted text-muted-foreground text-[10px]">
+            Quality Pending
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Package className="w-3 h-3" /> {o.sample_qty_units || "—"} units
+          </span>
+          <span>Demand: {o.demand_per_week_kg || "—"} kg/wk</span>
+          {o.delivery_date && (
+            <span className="flex items-center gap-1">
+              <CalendarIcon className="w-3 h-3" /> {format(new Date(o.delivery_date), "dd MMM")}
+            </span>
+          )}
+          <span>{o.status === "sample_delivered" ? "Delivered" : "Ordered"}</span>
+        </div>
+
+        {o.remarks && (
+          <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{o.remarks}</p>
+        )}
+
+        <Button size="sm" className="w-full text-xs h-8" onClick={() => openCreateForOrder(o.id)}>
+          <Star className="w-3 h-3 mr-1" /> Rate Quality & Create Agreement
+        </Button>
+      </CardContent>
+    </Card>
+  );
+
+  // Render an agreement card
+  const renderAgreementCard = (a: typeof enriched[0]) => (
+    <Card key={a.id} className="hover:shadow-md transition-shadow">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start justify-between">
+          <div className="min-w-0">
+            <p className="font-semibold text-sm truncate">{a.lead?.client_name || "Unknown"}</p>
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <MapPin className="w-3 h-3" /> {a.lead?.locality || a.lead?.pincode || "—"}
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <Badge variant="outline" className={`text-[10px] ${statusBadge[a.status] || ""}`}>
+              {a.status.replace(/_/g, " ")}
+            </Badge>
+            {a.esign_status && a.esign_status !== "not_sent" && (
+              <Badge variant="outline" className={`text-[10px] ${esignBadge[a.esign_status] || ""}`}>
+                e-sign: {a.esign_status}
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+          {a.quality_feedback !== null && (
+            <span className="flex items-center gap-1">
+              <Star className="w-3 h-3" /> Quality: {a.quality_feedback ? "Pass" : "Fail"}
+            </span>
+          )}
+          {a.agreed_price_per_kg && (
+            <span>₹{a.agreed_price_per_kg}/kg</span>
+          )}
+          {a.expected_weekly_volume_kg && (
+            <span><Package className="w-3 h-3 inline" /> {a.expected_weekly_volume_kg} kg/wk</span>
+          )}
+          {a.distribution_partner && (
+            <span className="truncate">{a.distribution_partner}</span>
+          )}
+        </div>
+
+        {a.remarks && (
+          <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{a.remarks}</p>
+        )}
+
+        { !["lost", "signed"].includes(a.status) && (
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" className="text-xs flex-1 h-8" onClick={() => setRevisitAgreementId(a.id)}>
+              <RotateCcw className="w-3 h-3 mr-1" /> Re-visit
+            </Button>
+            <Button size="sm" variant="outline" className="text-xs flex-1 h-8 text-destructive" onClick={() => setDropAgreementId(a.id)}>
+              <XCircle className="w-3 h-3 mr-1" /> Drop
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-foreground">Step 4: Sample Order to Agreement</h1>
-          <p className="text-sm text-muted-foreground">{agreements.length} total agreements</p>
+          <p className="text-sm text-muted-foreground">
+            {pendingOrders.length} pending · {agreements.length} agreements
+          </p>
         </div>
-        <Button size="sm" onClick={() => { resetForm(); setCreateOpen(true); }}>
-          <Plus className="w-4 h-4 mr-1" /> New Agreement
-        </Button>
       </div>
 
       {/* Tabs */}
@@ -304,7 +414,7 @@ export default function AgreementsPage() {
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="pending" className="text-xs">Quality Pending ({counts.pending})</TabsTrigger>
           <TabsTrigger value="negotiating" className="text-xs">Negotiating ({counts.negotiating})</TabsTrigger>
-          <TabsTrigger value="sent" className="text-xs">Agreement ({counts.sent})</TabsTrigger>
+          <TabsTrigger value="agreement" className="text-xs">Agreement ({counts.agreement})</TabsTrigger>
           <TabsTrigger value="revisit" className="text-xs">Re-visits ({counts.revisit})</TabsTrigger>
           <TabsTrigger value="dropped" className="text-xs">Dropped ({counts.dropped})</TabsTrigger>
         </TabsList>
@@ -317,72 +427,33 @@ export default function AgreementsPage() {
           </div>
         </div>
 
-        <TabsContent value={tab} className="mt-3">
+        {/* Pending Tab - Sample Orders without agreements */}
+        <TabsContent value="pending" className="mt-3">
           {loading ? (
             <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
-          ) : filtered.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground text-sm">No agreements found</div>
+          ) : filteredPending.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground text-sm">No sample orders pending quality feedback</div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {filtered.map(a => (
-                <Card key={a.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-sm truncate">{a.lead?.client_name || "Unknown"}</p>
-                        <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <MapPin className="w-3 h-3" /> {a.lead?.locality || a.lead?.pincode || "—"}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <Badge variant="outline" className={`text-[10px] ${statusBadge[a.status] || ""}`}>
-                          {a.status.replace(/_/g, " ")}
-                        </Badge>
-                        {a.esign_status && a.esign_status !== "not_sent" && (
-                          <Badge variant="outline" className={`text-[10px] ${esignBadge[a.esign_status] || ""}`}>
-                            e-sign: {a.esign_status}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
-                      {a.quality_feedback !== null && (
-                        <span className="flex items-center gap-1">
-                          <Star className="w-3 h-3" /> Quality: {a.quality_feedback ? "Pass" : "Fail"}
-                        </span>
-                      )}
-                      {a.agreed_price_per_kg && (
-                        <span>₹{a.agreed_price_per_kg}/kg</span>
-                      )}
-                      {a.expected_weekly_volume_kg && (
-                        <span><Package className="w-3 h-3 inline" /> {a.expected_weekly_volume_kg} kg/wk</span>
-                      )}
-                      {a.distribution_partner && (
-                        <span className="truncate">{a.distribution_partner}</span>
-                      )}
-                    </div>
-
-                    {a.remarks && (
-                      <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{a.remarks}</p>
-                    )}
-
-                    {!["lost", "signed"].includes(a.status) && (
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" className="text-xs flex-1 h-8" onClick={() => setRevisitAgreementId(a.id)}>
-                          <RotateCcw className="w-3 h-3 mr-1" /> Re-visit
-                        </Button>
-                        <Button size="sm" variant="outline" className="text-xs flex-1 h-8 text-destructive" onClick={() => setDropAgreementId(a.id)}>
-                          <XCircle className="w-3 h-3 mr-1" /> Drop
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
+              {filteredPending.map(renderPendingCard)}
             </div>
           )}
         </TabsContent>
+
+        {/* Other tabs - Agreement cards */}
+        {(["negotiating", "agreement", "revisit", "dropped"] as const).map(t => (
+          <TabsContent key={t} value={t} className="mt-3">
+            {loading ? (
+              <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
+            ) : filteredAgreements.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground text-sm">No agreements found</div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {filteredAgreements.map(renderAgreementCard)}
+              </div>
+            )}
+          </TabsContent>
+        ))}
       </Tabs>
 
       {/* Create Agreement Dialog */}
@@ -390,36 +461,6 @@ export default function AgreementsPage() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>New Agreement</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-2">
-
-            {/* Sample Order Selection */}
-            <div className="space-y-2">
-              <Label className="text-xs font-medium">Select Sample Order *</Label>
-              <Input placeholder="Search by client name, pincode..." value={orderSearch} onChange={e => setOrderSearch(e.target.value)} className="h-8 text-xs" />
-              {!selectedOrderId && filteredOrders.length > 0 && (
-                <div className="max-h-32 overflow-y-auto border rounded-md">
-                  {filteredOrders.map(o => {
-                    const lead = leads.find(l => l.id === o.lead_id);
-                    return (
-                      <button key={o.id} className="w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors border-b last:border-b-0" onClick={() => setSelectedOrderId(o.id)}>
-                        <span className="font-medium">{lead?.client_name || "Unknown"}</span>
-                        <span className="text-muted-foreground ml-2">{lead?.pincode} · {o.sample_qty_units || 0} units</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {!selectedOrderId && filteredOrders.length === 0 && (
-                <p className="text-xs text-muted-foreground">No completed sample orders available</p>
-              )}
-              {selectedOrder && selectedLead && (
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="bg-success/10 text-success text-xs">
-                    {selectedLead.client_name}
-                  </Badge>
-                  <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setSelectedOrderId("")}>Change</Button>
-                </div>
-              )}
-            </div>
 
             {/* Pre-filled Summary */}
             {selectedOrder && selectedLead && (
@@ -625,14 +666,9 @@ export default function AgreementsPage() {
 
           <DialogFooter className="gap-2">
             {rating > 0 && rating < 6 && selectedOrderId && (
-              <>
-                <Button variant="outline" size="sm" className="text-xs" onClick={() => { setCreateOpen(false); setRevisitAgreementId("new"); }}>
-                  <RotateCcw className="w-3 h-3 mr-1" /> Schedule Re-visit
-                </Button>
-                <Button size="sm" className="text-xs" onClick={handleSave}>
-                  <Send className="w-3 h-3 mr-1" /> Save Quality Feedback
-                </Button>
-              </>
+              <Button size="sm" className="text-xs" onClick={handleSave}>
+                <Send className="w-3 h-3 mr-1" /> Save Quality Feedback
+              </Button>
             )}
             {rating >= 6 && selectedOrderId && (
               <Button size="sm" className="text-xs" onClick={handleSave}>
