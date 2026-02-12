@@ -25,12 +25,12 @@ export function useSampleOrders() {
       .select("*")
       .order("created_at", { ascending: false });
     if (error) {
-      toast({ title: "Error fetching sample orders", description: error.message, variant: "destructive" });
+      console.error("Error fetching sample orders:", error.message);
     } else {
       setOrders(data || []);
     }
     setLoading(false);
-  }, [toast]);
+  }, []);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
