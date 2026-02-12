@@ -21,16 +21,21 @@ export function useProspects() {
 
   const fetchProspects = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("prospects")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) {
-      console.error("Error fetching prospects:", error.message);
-    } else {
-      setProspects(data || []);
+    try {
+      const { data, error } = await supabase
+        .from("prospects")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.error("Error fetching prospects:", error.message);
+      } else {
+        setProspects(data || []);
+      }
+    } catch (e) {
+      console.error("Exception fetching prospects:", e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => { fetchProspects(); }, [fetchProspects]);

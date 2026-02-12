@@ -20,16 +20,21 @@ export function useLeads() {
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("leads")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) {
-      console.error("Error fetching leads:", error.message);
-    } else {
-      setLeads(data || []);
+    try {
+      const { data, error } = await supabase
+        .from("leads")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.error("Error fetching leads:", error.message);
+      } else {
+        setLeads(data || []);
+      }
+    } catch (e) {
+      console.error("Exception fetching leads:", e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);

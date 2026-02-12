@@ -20,16 +20,21 @@ export function useSampleOrders() {
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("sample_orders")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) {
-      console.error("Error fetching sample orders:", error.message);
-    } else {
-      setOrders(data || []);
+    try {
+      const { data, error } = await supabase
+        .from("sample_orders")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.error("Error fetching sample orders:", error.message);
+      } else {
+        setOrders(data || []);
+      }
+    } catch (e) {
+      console.error("Exception fetching sample orders:", e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
