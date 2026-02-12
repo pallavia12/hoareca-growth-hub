@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import AvocadoBrochureCarousel from "@/components/AvocadoBrochureCarousel";
 
 const statusColors: Record<string, string> = {
   pending_visit: "bg-info/10 text-info border-info/20",
@@ -240,6 +241,9 @@ export default function SampleOrdersPage() {
           <Plus className="w-4 h-4 mr-1" /> New Sample Order
         </Button>
       </div>
+
+      {/* Brochure Carousel */}
+      <AvocadoBrochureCarousel />
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={v => setTab(v as any)}>
