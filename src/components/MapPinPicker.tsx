@@ -1,5 +1,4 @@
-import { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { MapPin, Crosshair } from "lucide-react";
 import "leaflet/dist/leaflet.css";
@@ -14,14 +13,11 @@ const icon = L.icon({
   iconAnchor: [12, 41],
 });
 
-function ClickHandler({ onLocationSelect }: { onLocationSelect: (lat: number, lng: number) => void }) {
-  useMapEvents({
-    click(e) {
-      onLocationSelect(e.latlng.lat, e.latlng.lng);
-    },
-  });
-  return null;
-}
+const BANGALORE_CENTER: L.LatLngTuple = [12.9716, 77.5946];
+const BANGALORE_BOUNDS: L.LatLngBoundsExpression = [
+  [12.75, 77.35],
+  [13.18, 77.85],
+];
 
 interface MapPinPickerProps {
   lat: number | null;
@@ -31,21 +27,90 @@ interface MapPinPickerProps {
 
 export default function MapPinPicker({ lat, lng, onLocationSelect }: MapPinPickerProps) {
   const [geoLoading, setGeoLoading] = useState(false);
-  const defaultCenter: [number, number] = [12.9716, 77.5946]; // Bangalore
-  const center: [number, number] = lat && lng ? [lat, lng] : defaultCenter;
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+  const markerRef = useRef<L.Marker | null>(null);
+  const onLocationSelectRef = useRef(onLocationSelect);
 
-  const handleGeolocate = () => {
+  // Keep callback ref up to date without re-running effect
+  useEffect(() => {
+    onLocationSelectRef.current = onLocationSelect;
+  }, [onLocationSelect]);
+
+  // Initialize map once
+  useEffect(() => {
+    if (!mapRef.current || mapInstanceRef.current) return;
+
+    const center: L.LatLngTuple = lat && lng ? [lat, lng] : BANGALORE_CENTER;
+
+    const map = L.map(mapRef.current, {
+      center,
+      zoom: 13,
+      maxBounds: BANGALORE_BOUNDS,
+      maxBoundsViscosity: 1.0,
+      minZoom: 11,
+    });
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+    }).addTo(map);
+
+    // Place initial marker if coords provided
+    if (lat && lng) {
+      markerRef.current = L.marker([lat, lng], { icon }).addTo(map);
+    }
+
+    map.on("click", (e: L.LeafletMouseEvent) => {
+      const { lat: clickLat, lng: clickLng } = e.latlng;
+
+      // Update marker
+      if (markerRef.current) {
+        markerRef.current.setLatLng([clickLat, clickLng]);
+      } else {
+        markerRef.current = L.marker([clickLat, clickLng], { icon }).addTo(map);
+      }
+
+      onLocationSelectRef.current(clickLat, clickLng);
+    });
+
+    // Fix tile rendering inside dialog by invalidating size after a short delay
+    setTimeout(() => map.invalidateSize(), 200);
+
+    mapInstanceRef.current = map;
+
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+      markerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync marker when lat/lng change externally (e.g. geolocation)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !lat || !lng) return;
+
+    if (markerRef.current) {
+      markerRef.current.setLatLng([lat, lng]);
+    } else {
+      markerRef.current = L.marker([lat, lng], { icon }).addTo(map);
+    }
+    map.setView([lat, lng], map.getZoom());
+  }, [lat, lng]);
+
+  const handleGeolocate = useCallback(() => {
     if (!navigator.geolocation) return;
     setGeoLoading(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        onLocationSelect(pos.coords.latitude, pos.coords.longitude);
+        onLocationSelectRef.current(pos.coords.latitude, pos.coords.longitude);
         setGeoLoading(false);
       },
       () => setGeoLoading(false),
       { enableHighAccuracy: true }
     );
-  };
+  }, []);
 
   return (
     <div className="space-y-2">
@@ -58,14 +123,7 @@ export default function MapPinPicker({ lat, lng, onLocationSelect }: MapPinPicke
         </Button>
       </div>
       <div className="h-48 rounded-md overflow-hidden border">
-        <MapContainer center={center} zoom={13} style={{ height: "100%", width: "100%" }} key={`${center[0]}-${center[1]}`}>
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          <ClickHandler onLocationSelect={onLocationSelect} />
-          {lat && lng && <Marker position={[lat, lng]} icon={icon} />}
-        </MapContainer>
+        <div ref={mapRef} style={{ height: "100%", width: "100%" }} />
       </div>
       {lat && lng && (
         <p className="text-[10px] text-muted-foreground">
