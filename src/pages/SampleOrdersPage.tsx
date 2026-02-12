@@ -348,7 +348,7 @@ export default function SampleOrdersPage() {
                             <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded line-clamp-2">{l.remarks}</p>
                           )}
                           <Button size="sm" className="w-full text-xs h-8" onClick={() => { resetForm(); handleSelectLead(l.id); setCreateOpen(true); }}>
-                            <Plus className="w-3 h-3 mr-1" /> Create Sample Order
+                            <Plus className="w-3 h-3 mr-1" /> Log Visit
                           </Button>
                         </CardContent>
                       </Card>
