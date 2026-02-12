@@ -14,12 +14,13 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useProspects } from "@/hooks/useProspects";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  Plus, Search, Upload, ExternalLink,
+  Plus, Search, Upload, ExternalLink, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -47,13 +48,15 @@ export default function ProspectsPage() {
   const [filterTag, setFilterTag] = useState("");
   const [addOpen, setAddOpen] = useState(false);
 
+  // Multi-select for bulk assignment
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
   // Assignment dialog state - 2 screens
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignStep, setAssignStep] = useState<1 | 2>(1);
   const [assignPurpose, setAssignPurpose] = useState("");
   const [assignTo, setAssignTo] = useState("");
   const [userSearch, setUserSearch] = useState("");
-  const [pendingAssignId, setPendingAssignId] = useState<string | null>(null);
 
   // Users list for assignment
   const [users, setUsers] = useState<{ email: string; full_name: string | null }[]>([]);
@@ -119,8 +122,35 @@ export default function ProspectsPage() {
     }
   };
 
-  const openAssignDialog = (prospectId: string) => {
-    setPendingAssignId(prospectId);
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === freshProspects.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(freshProspects.map(p => p.id)));
+    }
+  };
+
+  const openAssignDialog = (prospectId?: string) => {
+    if (prospectId) {
+      setSelectedIds(new Set([prospectId]));
+    }
+    setAssignPurpose("");
+    setAssignTo("");
+    setAssignStep(1);
+    setUserSearch("");
+    setAssignOpen(true);
+  };
+
+  const openBulkAssign = () => {
+    if (selectedIds.size === 0) return;
     setAssignPurpose("");
     setAssignTo("");
     setAssignStep(1);
@@ -129,15 +159,17 @@ export default function ProspectsPage() {
   };
 
   const handleConfirmAssign = async () => {
-    if (!assignPurpose || !assignTo || !pendingAssignId) return;
-    await updateProspect(pendingAssignId, {
-      status: "assigned",
-      mapped_to: assignTo,
-      tag: assignPurpose === "Call" ? "New" : "New",
-    });
-    toast({ title: "Prospect assigned successfully" });
+    if (!assignPurpose || !assignTo || selectedIds.size === 0) return;
+    for (const id of selectedIds) {
+      await updateProspect(id, {
+        status: "assigned",
+        mapped_to: assignTo,
+        tag: "New",
+      });
+    }
+    toast({ title: `${selectedIds.size} prospect(s) assigned successfully` });
     setAssignOpen(false);
-    setPendingAssignId(null);
+    setSelectedIds(new Set());
   };
 
   const filteredUsers = useMemo(() => {
@@ -246,6 +278,11 @@ export default function ProspectsPage() {
               </SelectContent>
             </Select>
           )}
+          {tab === "fresh" && selectedIds.size > 0 && (
+            <Button size="sm" onClick={openBulkAssign} className="text-xs h-9">
+              <Users className="w-4 h-4 mr-1" /> Assign {selectedIds.size} Selected
+            </Button>
+          )}
         </div>
 
         {/* Table */}
@@ -256,7 +293,16 @@ export default function ProspectsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      {tab === "fresh" && (
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={freshProspects.length > 0 && selectedIds.size === freshProspects.length}
+                            onCheckedChange={toggleSelectAll}
+                          />
+                        </TableHead>
+                      )}
                       <TableHead className="text-xs">Restaurant Name</TableHead>
+                      <TableHead className="text-xs">Locality</TableHead>
                       <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Location</TableHead>
                       <TableHead className="text-xs">Tag</TableHead>
@@ -265,15 +311,24 @@ export default function ProspectsPage() {
                   </TableHeader>
                   <TableBody>
                     {loading ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading prospects...</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={tab === "fresh" ? 7 : 5} className="text-center text-muted-foreground text-sm py-8">Loading prospects...</TableCell></TableRow>
                     ) : currentList.length === 0 ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">
+                      <TableRow><TableCell colSpan={tab === "fresh" ? 7 : 5} className="text-center text-muted-foreground text-sm py-8">
                         {tab === "fresh" ? "No fresh prospects found. Add prospects to get started." : "No drop-outs yet."}
                       </TableCell></TableRow>
                     ) : (
                       currentList.map(p => (
                         <TableRow key={p.id} className="text-sm">
+                          {tab === "fresh" && (
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedIds.has(p.id)}
+                                onCheckedChange={() => toggleSelect(p.id)}
+                              />
+                            </TableCell>
+                          )}
                           <TableCell className="font-medium max-w-[200px] truncate">{p.restaurant_name}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{p.mapped_to || "—"}</TableCell>
                           <TableCell className="hidden sm:table-cell">
                             {p.location ? (
@@ -282,7 +337,7 @@ export default function ProspectsPage() {
                                 <span className="truncate max-w-[150px]">{p.location}</span>
                               </a>
                             ) : (
-                              <span className="text-xs text-muted-foreground">{p.locality}</span>
+                              <span className="text-xs text-muted-foreground">—</span>
                             )}
                           </TableCell>
                           <TableCell>
@@ -313,7 +368,10 @@ export default function ProspectsPage() {
         <DialogContent className="max-w-sm">
           {assignStep === 1 ? (
             <>
-              <DialogHeader><DialogTitle className="text-base">Select Purpose</DialogTitle></DialogHeader>
+              <DialogHeader>
+                <DialogTitle className="text-base">Select Purpose</DialogTitle>
+                <p className="text-xs text-muted-foreground">{selectedIds.size} prospect(s) selected</p>
+              </DialogHeader>
               <RadioGroup value={assignPurpose} onValueChange={setAssignPurpose} className="space-y-3 py-2">
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="Call" id="purpose-call" />
