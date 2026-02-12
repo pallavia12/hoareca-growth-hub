@@ -17,10 +17,11 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useProspects } from "@/hooks/useProspects";
+import { useLeads } from "@/hooks/useLeads";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  Plus, Search, Upload, ExternalLink, Users,
+  Plus, Search, Upload, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -40,6 +41,7 @@ const sourceTypes = ["Google Maps", "Swiggy", "Zomato", "Event", "Referral", "Fi
 
 export default function ProspectsPage() {
   const { prospects, loading, addProspect, updateProspect, filterProspects, refetch } = useProspects();
+  const { leads } = useLeads();
   const { user } = useAuth();
   const { toast } = useToast();
   const [tab, setTab] = useState<"fresh" | "converted" | "dropouts">("fresh");
@@ -48,17 +50,12 @@ export default function ProspectsPage() {
   const [filterTag, setFilterTag] = useState("");
   const [addOpen, setAddOpen] = useState(false);
 
-  // Multi-select for bulk assignment
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  // Assignment dialog state - 2 screens
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignStep, setAssignStep] = useState<1 | 2>(1);
   const [assignPurpose, setAssignPurpose] = useState("");
   const [assignTo, setAssignTo] = useState("");
   const [userSearch, setUserSearch] = useState("");
-
-  // Users list for assignment
   const [users, setUsers] = useState<{ email: string; full_name: string | null }[]>([]);
 
   useEffect(() => {
@@ -67,7 +64,6 @@ export default function ProspectsPage() {
     });
   }, []);
 
-  // Add form
   const [form, setForm] = useState({
     pincode: "", locality: "", restaurant_name: "", location: "",
     source: "", cuisine_type: "",
@@ -75,7 +71,12 @@ export default function ProspectsPage() {
 
   const localities = useMemo(() => [...new Set(prospects.map(p => p.locality))].filter(Boolean).sort(), [prospects]);
 
-  // Fresh = not Dropped and not Qualified
+  // Helper to get lead remarks for a prospect
+  const getLeadRemarks = (prospectId: string) => {
+    const lead = leads.find(l => l.prospect_id === prospectId);
+    return lead?.remarks || null;
+  };
+
   const freshProspects = useMemo(() => {
     let list = prospects.filter(p => {
       const t = p.tag || "New";
@@ -90,7 +91,6 @@ export default function ProspectsPage() {
     return list;
   }, [prospects, search, filterLocality, filterTag]);
 
-  // Converted = Qualified tag
   const convertedProspects = useMemo(() => {
     let list = prospects.filter(p => p.tag === "Qualified");
     if (search) {
@@ -153,33 +153,19 @@ export default function ProspectsPage() {
   };
 
   const openAssignDialog = (prospectId?: string) => {
-    if (prospectId) {
-      setSelectedIds(new Set([prospectId]));
-    }
-    setAssignPurpose("");
-    setAssignTo("");
-    setAssignStep(1);
-    setUserSearch("");
-    setAssignOpen(true);
+    if (prospectId) setSelectedIds(new Set([prospectId]));
+    setAssignPurpose(""); setAssignTo(""); setAssignStep(1); setUserSearch(""); setAssignOpen(true);
   };
 
   const openBulkAssign = () => {
     if (selectedIds.size === 0) return;
-    setAssignPurpose("");
-    setAssignTo("");
-    setAssignStep(1);
-    setUserSearch("");
-    setAssignOpen(true);
+    setAssignPurpose(""); setAssignTo(""); setAssignStep(1); setUserSearch(""); setAssignOpen(true);
   };
 
   const handleConfirmAssign = async () => {
     if (!assignPurpose || !assignTo || selectedIds.size === 0) return;
     for (const id of selectedIds) {
-      await updateProspect(id, {
-        status: "assigned",
-        mapped_to: assignTo,
-        tag: "New",
-      });
+      await updateProspect(id, { status: "assigned", mapped_to: assignTo, tag: "New" });
     }
     toast({ title: `${selectedIds.size} prospect(s) assigned successfully` });
     setAssignOpen(false);
@@ -188,17 +174,8 @@ export default function ProspectsPage() {
 
   const filteredUsers = useMemo(() => {
     const s = userSearch.toLowerCase();
-    return users.filter(u =>
-      !s || (u.full_name || "").toLowerCase().includes(s) || (u.email || "").toLowerCase().includes(s)
-    );
+    return users.filter(u => !s || (u.full_name || "").toLowerCase().includes(s) || (u.email || "").toLowerCase().includes(s));
   }, [users, userSearch]);
-
-  const currentList = tab === "fresh" ? freshProspects : tab === "converted" ? convertedProspects : droppedProspects;
-
-  const buildGoogleMapsLink = (location: string | null) => {
-    if (!location) return null;
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
-  };
 
   return (
     <div className="space-y-4">
@@ -229,10 +206,6 @@ export default function ProspectsPage() {
                 <div className="space-y-1">
                   <Label className="text-xs">Restaurant Name *</Label>
                   <Input placeholder="The Avocado Café" value={form.restaurant_name} onChange={e => setForm(f => ({ ...f, restaurant_name: e.target.value }))} />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Location</Label>
-                  <Input placeholder="Full address for Google Maps" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
@@ -300,7 +273,7 @@ export default function ProspectsPage() {
           )}
         </div>
 
-        {/* Fresh Prospects Table */}
+        {/* Fresh Prospects Table - Location column removed */}
         <TabsContent value="fresh" className="mt-3">
           <Card>
             <CardContent className="p-0">
@@ -309,47 +282,28 @@ export default function ProspectsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-10">
-                        <Checkbox
-                          checked={freshProspects.length > 0 && selectedIds.size === freshProspects.length}
-                          onCheckedChange={toggleSelectAll}
-                        />
+                        <Checkbox checked={freshProspects.length > 0 && selectedIds.size === freshProspects.length} onCheckedChange={toggleSelectAll} />
                       </TableHead>
                       <TableHead className="text-xs">Restaurant Name</TableHead>
                       <TableHead className="text-xs">Locality</TableHead>
                       <TableHead className="text-xs">Assigned To</TableHead>
-                      <TableHead className="text-xs hidden sm:table-cell">Location</TableHead>
                       <TableHead className="text-xs">Tag</TableHead>
                       <TableHead className="text-xs w-24">Assign</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loading ? (
-                      <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground text-sm py-8">Loading prospects...</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">Loading prospects...</TableCell></TableRow>
                     ) : freshProspects.length === 0 ? (
-                      <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground text-sm py-8">No fresh prospects found. Add prospects to get started.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No fresh prospects found.</TableCell></TableRow>
                     ) : (
                       freshProspects.map(p => (
                         <TableRow key={p.id} className="text-sm">
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedIds.has(p.id)}
-                              onCheckedChange={() => toggleSelect(p.id)}
-                            />
-                          </TableCell>
+                          <TableCell><Checkbox checked={selectedIds.has(p.id)} onCheckedChange={() => toggleSelect(p.id)} /></TableCell>
                           <TableCell className="font-medium max-w-[200px] truncate">{p.restaurant_name}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {(p.tag || "New") === "New" ? "—" : (p.mapped_to || "—")}
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell">
-                            {p.location ? (
-                              <a href={buildGoogleMapsLink(p.location)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                                <ExternalLink className="w-3 h-3" />
-                                <span className="truncate max-w-[150px]">{p.location}</span>
-                              </a>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className={`text-[10px] ${tagColors[p.tag || "New"] || tagColors["New"]}`}>
@@ -357,9 +311,7 @@ export default function ProspectsPage() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openAssignDialog(p.id)}>
-                              Assign
-                            </Button>
+                            <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openAssignDialog(p.id)}>Assign</Button>
                           </TableCell>
                         </TableRow>
                       ))
@@ -371,7 +323,7 @@ export default function ProspectsPage() {
           </Card>
         </TabsContent>
 
-        {/* Converted Tab */}
+        {/* Converted Tab - Location column removed */}
         <TabsContent value="converted" className="mt-3">
           <Card>
             <CardContent className="p-0">
@@ -382,31 +334,20 @@ export default function ProspectsPage() {
                       <TableHead className="text-xs">Restaurant Name</TableHead>
                       <TableHead className="text-xs">Locality</TableHead>
                       <TableHead className="text-xs">Assigned To</TableHead>
-                      <TableHead className="text-xs hidden sm:table-cell">Location</TableHead>
                       <TableHead className="text-xs">Tag</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loading ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                     ) : convertedProspects.length === 0 ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No converted prospects yet.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No converted prospects yet.</TableCell></TableRow>
                     ) : (
                       convertedProspects.map(p => (
                         <TableRow key={p.id} className="text-sm">
                           <TableCell className="font-medium max-w-[200px] truncate">{p.restaurant_name}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{p.mapped_to || "—"}</TableCell>
-                          <TableCell className="hidden sm:table-cell">
-                            {p.location ? (
-                              <a href={buildGoogleMapsLink(p.location)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                                <ExternalLink className="w-3 h-3" />
-                                <span className="truncate max-w-[150px]">{p.location}</span>
-                              </a>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
                           <TableCell>
                             <Badge variant="outline" className={`text-[10px] ${tagColors["Qualified"]}`}>Qualified</Badge>
                           </TableCell>
@@ -420,7 +361,7 @@ export default function ProspectsPage() {
           </Card>
         </TabsContent>
 
-        {/* Drop-outs Tab */}
+        {/* Drop-outs Tab - Location removed, Remarks added */}
         <TabsContent value="dropouts" className="mt-3">
           <Card>
             <CardContent className="p-0">
@@ -431,7 +372,7 @@ export default function ProspectsPage() {
                       <TableHead className="text-xs">Restaurant Name</TableHead>
                       <TableHead className="text-xs">Locality</TableHead>
                       <TableHead className="text-xs">Assigned To</TableHead>
-                      <TableHead className="text-xs hidden sm:table-cell">Location</TableHead>
+                      <TableHead className="text-xs">Remarks</TableHead>
                       <TableHead className="text-xs">Tag</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -446,15 +387,8 @@ export default function ProspectsPage() {
                           <TableCell className="font-medium max-w-[200px] truncate">{p.restaurant_name}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{p.mapped_to || "—"}</TableCell>
-                          <TableCell className="hidden sm:table-cell">
-                            {p.location ? (
-                              <a href={buildGoogleMapsLink(p.location)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                                <ExternalLink className="w-3 h-3" />
-                                <span className="truncate max-w-[150px]">{p.location}</span>
-                              </a>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
+                          <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
+                            {getLeadRemarks(p.id) || "—"}
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className={`text-[10px] ${tagColors["Dropped"]}`}>Dropped</Badge>
