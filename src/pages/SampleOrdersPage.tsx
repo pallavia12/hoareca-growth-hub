@@ -52,7 +52,7 @@ export default function SampleOrdersPage() {
 
   const [tab, setTab] = useState<"scheduled" | "completed" | "revisit" | "dropped">("scheduled");
   const [search, setSearch] = useState("");
-  const [filterPincode, setFilterPincode] = useState("");
+  const [filterLocality, setFilterLocality] = useState("");
 
   // Log Visit dialog
   const [logVisitOpen, setLogVisitOpen] = useState(false);
@@ -113,9 +113,9 @@ export default function SampleOrdersPage() {
       const s = search.toLowerCase();
       list = list.filter(l => l.client_name.toLowerCase().includes(s) || l.pincode.includes(s));
     }
-    if (filterPincode && filterPincode !== "all") list = list.filter(l => l.pincode === filterPincode);
+    if (filterLocality && filterLocality !== "all") list = list.filter(l => l.locality === filterLocality);
     return list;
-  }, [qualifiedLeads, search, filterPincode]);
+  }, [qualifiedLeads, search, filterLocality]);
 
   const scheduledOrders = useMemo(() => {
     return ordersWithLeads.filter(o => {
@@ -124,10 +124,10 @@ export default function SampleOrdersPage() {
         const s = search.toLowerCase();
         if (!(o.lead?.client_name || "").toLowerCase().includes(s) && !(o.lead?.pincode || "").includes(s)) return false;
       }
-      if (filterPincode && filterPincode !== "all" && o.lead?.pincode !== filterPincode) return false;
+      if (filterLocality && filterLocality !== "all" && o.lead?.locality !== filterLocality) return false;
       return true;
     });
-  }, [ordersWithLeads, search, filterPincode]);
+  }, [ordersWithLeads, search, filterLocality]);
 
   const completedOrders = useMemo(() => {
     return ordersWithLeads.filter(o => {
@@ -136,7 +136,7 @@ export default function SampleOrdersPage() {
         const s = search.toLowerCase();
         if (!(o.lead?.client_name || "").toLowerCase().includes(s)) return false;
       }
-      if (filterPincode && filterPincode !== "all" && o.lead?.pincode !== filterPincode) return false;
+      if (filterLocality && filterLocality !== "all" && o.lead?.locality !== filterLocality) return false;
       // Follow-up date filter
       if (followUpFrom || followUpTo) {
         const fuMatch = o.remarks?.match(/Follow-up:\s*(\d{2}\s\w+\s\d{4})/);
@@ -147,7 +147,7 @@ export default function SampleOrdersPage() {
       }
       return true;
     });
-  }, [ordersWithLeads, search, filterPincode, followUpFrom, followUpTo]);
+  }, [ordersWithLeads, search, filterLocality, followUpFrom, followUpTo]);
 
   const revisitOrders = useMemo(() => {
     return ordersWithLeads.filter(o => {
@@ -156,10 +156,10 @@ export default function SampleOrdersPage() {
         const s = search.toLowerCase();
         if (!(o.lead?.client_name || "").toLowerCase().includes(s)) return false;
       }
-      if (filterPincode && filterPincode !== "all" && o.lead?.pincode !== filterPincode) return false;
+      if (filterLocality && filterLocality !== "all" && o.lead?.locality !== filterLocality) return false;
       return true;
     });
-  }, [ordersWithLeads, search, filterPincode]);
+  }, [ordersWithLeads, search, filterLocality]);
 
   const droppedOrders = useMemo(() => {
     return ordersWithLeads.filter(o => {
@@ -179,10 +179,10 @@ export default function SampleOrdersPage() {
     dropped: droppedOrders.length,
   }), [scheduledLeads, scheduledOrders, completedOrders, revisitOrders, droppedOrders]);
 
-  const pincodes = useMemo(() => {
+  const localities = useMemo(() => {
     const set = new Set([
-      ...leads.map(l => l.pincode),
-      ...ordersWithLeads.map(o => o.lead?.pincode).filter(Boolean) as string[],
+      ...leads.map(l => l.locality).filter(Boolean) as string[],
+      ...ordersWithLeads.map(o => o.lead?.locality).filter(Boolean) as string[],
     ]);
     return [...set].sort();
   }, [leads, ordersWithLeads]);
@@ -343,11 +343,11 @@ export default function SampleOrdersPage() {
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
             <Input placeholder="Search client name, pincode..." className="pl-8 h-9 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <Select value={filterPincode} onValueChange={setFilterPincode}>
-            <SelectTrigger className="w-full sm:w-[140px] h-9 text-xs"><SelectValue placeholder="All Pincodes" /></SelectTrigger>
+          <Select value={filterLocality} onValueChange={setFilterLocality}>
+            <SelectTrigger className="w-full sm:w-[160px] h-9 text-xs"><SelectValue placeholder="All Localities" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Pincodes</SelectItem>
-              {pincodes.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+              <SelectItem value="all">All Localities</SelectItem>
+              {localities.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
             </SelectContent>
           </Select>
           {tab === "completed" && (

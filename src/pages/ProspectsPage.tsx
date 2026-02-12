@@ -41,7 +41,7 @@ export default function ProspectsPage() {
   const { prospects, loading, addProspect, updateProspect, filterProspects, refetch } = useProspects();
   const { user } = useAuth();
   const { toast } = useToast();
-  const [tab, setTab] = useState<"fresh" | "converted">("fresh");
+  const [tab, setTab] = useState<"fresh" | "dropouts">("fresh");
   const [search, setSearch] = useState("");
   const [filterLocality, setFilterLocality] = useState("");
   const [filterTag, setFilterTag] = useState("");
@@ -75,7 +75,7 @@ export default function ProspectsPage() {
   // Fresh = not converted (status != converted)
   // Converted = status === converted
   const freshProspects = useMemo(() => {
-    let list = prospects.filter(p => p.status !== "converted");
+    let list = prospects.filter(p => (p.tag || "New") !== "Dropped");
     if (search) {
       const s = search.toLowerCase();
       list = list.filter(p => p.restaurant_name.toLowerCase().includes(s) || p.locality.toLowerCase().includes(s));
@@ -85,8 +85,8 @@ export default function ProspectsPage() {
     return list;
   }, [prospects, search, filterLocality, filterTag]);
 
-  const convertedProspects = useMemo(() => {
-    let list = prospects.filter(p => p.status === "converted");
+  const droppedProspects = useMemo(() => {
+    let list = prospects.filter(p => p.tag === "Dropped");
     if (search) {
       const s = search.toLowerCase();
       list = list.filter(p => p.restaurant_name.toLowerCase().includes(s) || p.locality.toLowerCase().includes(s));
@@ -96,8 +96,8 @@ export default function ProspectsPage() {
   }, [prospects, search, filterLocality]);
 
   const counts = useMemo(() => ({
-    fresh: prospects.filter(p => p.status !== "converted").length,
-    converted: prospects.filter(p => p.status === "converted").length,
+    fresh: prospects.filter(p => (p.tag || "New") !== "Dropped").length,
+    dropouts: prospects.filter(p => p.tag === "Dropped").length,
   }), [prospects]);
 
   const handleAdd = async () => {
@@ -147,7 +147,7 @@ export default function ProspectsPage() {
     );
   }, [users, userSearch]);
 
-  const currentList = tab === "fresh" ? freshProspects : convertedProspects;
+  const currentList = tab === "fresh" ? freshProspects : droppedProspects;
 
   const buildGoogleMapsLink = (location: string | null) => {
     if (!location) return null;
@@ -220,8 +220,8 @@ export default function ProspectsPage() {
       {/* Tabs */}
       <Tabs value={tab} onValueChange={v => setTab(v as any)}>
         <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="fresh" className="text-xs">Fresh ({counts.fresh})</TabsTrigger>
-          <TabsTrigger value="converted" className="text-xs">Converted ({counts.converted})</TabsTrigger>
+          <TabsTrigger value="fresh" className="text-xs">Fresh Prospects ({counts.fresh})</TabsTrigger>
+          <TabsTrigger value="dropouts" className="text-xs">Drop-outs ({counts.dropouts})</TabsTrigger>
         </TabsList>
 
         {/* Filters */}
@@ -249,7 +249,7 @@ export default function ProspectsPage() {
         </div>
 
         {/* Table */}
-        <TabsContent value={tab} className="mt-3">
+        <TabsContent value={tab} className="mt-3" forceMount={undefined}>
           <Card>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
@@ -268,7 +268,7 @@ export default function ProspectsPage() {
                       <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading prospects...</TableCell></TableRow>
                     ) : currentList.length === 0 ? (
                       <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">
-                        {tab === "fresh" ? "No fresh prospects found. Add prospects to get started." : "No converted prospects yet."}
+                        {tab === "fresh" ? "No fresh prospects found. Add prospects to get started." : "No drop-outs yet."}
                       </TableCell></TableRow>
                     ) : (
                       currentList.map(p => (
