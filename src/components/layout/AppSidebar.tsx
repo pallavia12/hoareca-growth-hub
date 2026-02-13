@@ -8,6 +8,7 @@ import {
   Settings,
   User,
   Leaf,
+  BookOpen,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -31,6 +32,7 @@ const navItems = [
   { title: "Step 2: Lead Gen", url: "/leads", icon: Phone, badge: "12" },
   { title: "Step 3: Sample Orders", url: "/sample-orders", icon: ShoppingBag, badge: "6" },
   { title: "Step 4: Agreements", url: "/agreements", icon: FileSignature, badge: "3" },
+  { title: "Lead Master", url: "/lead-master", icon: BookOpen },
 ];
 
 const adminItems = [

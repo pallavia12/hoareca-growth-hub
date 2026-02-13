@@ -12,6 +12,7 @@ import ProspectsPage from "./pages/ProspectsPage";
 import LeadsPage from "./pages/LeadsPage";
 import SampleOrdersPage from "./pages/SampleOrdersPage";
 import AgreementsPage from "./pages/AgreementsPage";
+import LeadMasterPage from "./pages/LeadMasterPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import {
   ConfigPage,
@@ -40,6 +41,7 @@ const AppRoutes = () => {
       <Route path="/leads" element={<ProtectedRoute><LeadsPage /></ProtectedRoute>} />
       <Route path="/sample-orders" element={<ProtectedRoute><SampleOrdersPage /></ProtectedRoute>} />
       <Route path="/agreements" element={<ProtectedRoute><AgreementsPage /></ProtectedRoute>} />
+      <Route path="/lead-master" element={<ProtectedRoute><LeadMasterPage /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute><AdminDashboardPage /></ProtectedRoute>} />
       <Route path="/config" element={<ProtectedRoute><ConfigPage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />

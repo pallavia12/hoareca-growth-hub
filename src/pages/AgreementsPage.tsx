@@ -622,6 +622,7 @@ export default function AgreementsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">Lead Name</TableHead>
+                      <TableHead className="text-xs">Visits</TableHead>
                       <TableHead className="text-xs">Next Visit</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Last Feedback</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
@@ -629,13 +630,14 @@ export default function AgreementsPage() {
                   </TableHeader>
                   <TableBody>
                     {revisitItems.length === 0 ? (
-                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No revisits scheduled.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No revisits scheduled.</TableCell></TableRow>
                     ) : (
                       revisitItems.map(a => {
                         const nextVisit = extractRevisitDate(a.remarks);
                         return (
                           <TableRow key={a.id} className="text-sm">
                             <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{a.lead?.visit_count || 0}</TableCell>
                             <TableCell className="text-xs">{nextVisit || "—"}</TableCell>
                             <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
                             <TableCell>
