@@ -66,8 +66,10 @@ export default function LeadMasterPage() {
       const agreement = order ? agreements.find(a => a.sample_order_id === order.id) : null;
 
       let currentStage: CurrentStage = "Prospect";
-      if (agreement && ["signed", "agreement_sent"].includes(agreement.status)) {
-        currentStage = agreement.status === "signed" ? "Customer" : "Agreement";
+      if (agreement?.status === "signed" && agreement.esign_status === "completed") {
+        currentStage = "Customer";
+      } else if (agreement && ["signed", "agreement_sent"].includes(agreement.status)) {
+        currentStage = "Agreement";
       } else if (order) {
         currentStage = "Sample Order";
       } else if (lead) {
@@ -254,18 +256,19 @@ export default function LeadMasterPage() {
                     </div>
 
                     {/* Stage blocks - stacked for mobile */}
-                    <div className="grid grid-cols-3 gap-2 ml-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 ml-6">
                       <StageBlockMobile title="S1: P→L" agent={row.stage1.agent} calls={row.stage1.calls} visits={row.stage1.visits} days={row.stage1.days} />
                       <StageBlockMobile title="S2: L→SO" agent={row.stage2.agent} visits={row.stage2.visits} days={row.stage2.days} />
                       <StageBlockMobile title="S3: SO→A" agent={row.stage3.agent} visits={row.stage3.visits} days={row.stage3.days} />
+                      <StageBlockMobile title="S4: Customer" agent={row.currentStage === "Customer" ? "Created" : "—"} days={row.currentStage === "Customer" ? 0 : 0} visits={0} isCustomerStage customerId={row.customerId} />
                     </div>
 
                     {/* Summary row */}
                     <div className="flex gap-4 mt-2 ml-6 text-[11px] text-muted-foreground">
-                      <span>Calls: <strong className="text-foreground">{row.totalCalls}</strong></span>
-                      <span>Visits: <strong className="text-foreground">{row.totalVisits}</strong></span>
-                      <span>Days: <strong className="text-foreground">{row.totalDays}</strong></span>
-                      {row.customerId !== "—" && <span>ID: <strong className="text-foreground font-mono">{row.customerId}</strong></span>}
+                      <span>Total Calls: <strong className="text-foreground">{row.totalCalls}</strong></span>
+                      <span>Total Visits: <strong className="text-foreground">{row.totalVisits}</strong></span>
+                      <span>Total Days: <strong className="text-foreground">{row.totalDays}</strong></span>
+                      {row.customerId !== "—" && <span>Customer ID: <strong className="text-foreground font-mono">{row.customerId}</strong></span>}
                     </div>
                   </CardContent>
                 </button>
@@ -343,7 +346,16 @@ export default function LeadMasterPage() {
   );
 }
 
-function StageBlockMobile({ title, agent, calls, visits, days }: { title: string; agent: string; calls?: number; visits: number; days: number }) {
+function StageBlockMobile({ title, agent, calls, visits, days, isCustomerStage, customerId }: { title: string; agent: string; calls?: number; visits: number; days: number; isCustomerStage?: boolean; customerId?: string }) {
+  if (isCustomerStage) {
+    return (
+      <div className="bg-muted/40 rounded-md p-1.5 text-[10px] space-y-0.5">
+        <p className="font-semibold text-foreground text-[11px]">{title}</p>
+        <p className="truncate"><span className="text-muted-foreground">Status:</span> {customerId && customerId !== "—" ? "✅ Created" : "Pending"}</p>
+        {customerId && customerId !== "—" && <p className="font-mono"><span className="text-muted-foreground">ID:</span> {customerId}</p>}
+      </div>
+    );
+  }
   return (
     <div className="bg-muted/40 rounded-md p-1.5 text-[10px] space-y-0.5">
       <p className="font-semibold text-foreground text-[11px]">{title}</p>

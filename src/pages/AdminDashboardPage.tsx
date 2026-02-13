@@ -17,23 +17,15 @@ import {
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Progress } from "@/components/ui/progress";
-import { useProspects } from "@/hooks/useProspects";
-import { useLeads } from "@/hooks/useLeads";
-import { useSampleOrders } from "@/hooks/useSampleOrders";
-import { useAgreements } from "@/hooks/useAgreements";
 import {
   MapPin, Users, Package, Layers, Plus, Pencil, Trash2, Search,
   Database, Phone, ShoppingBag, FileSignature, TrendingUp, PhoneCall, IndianRupee,
-  CalendarIcon, Filter,
+  CalendarIcon, ChevronRight,
 } from "lucide-react";
-import { format, subDays, differenceInDays, isWithinInterval } from "date-fns";
 import type { Tables as TablesType } from "@/integrations/supabase/types";
-import type { DateRange } from "react-day-picker";
 
 const metrics = [
   { label: "Total Prospects", value: "147", icon: Database, color: "text-primary" },
@@ -295,8 +287,19 @@ export default function AdminDashboardPage() {
         ))}
       </div>
 
-      {/* Funnel View */}
-      <FunnelView />
+      {/* Link to Funnel View */}
+      <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => window.location.href = "/admin/funnel"}>
+        <CardContent className="p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <TrendingUp className="w-5 h-5 text-primary" />
+            <div>
+              <p className="font-semibold text-sm">Funnel View</p>
+              <p className="text-xs text-muted-foreground">Conversion analytics & drop-off analysis</p>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+        </CardContent>
+      </Card>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
@@ -705,236 +708,4 @@ export default function AdminDashboardPage() {
   );
 }
 
-function FunnelView() {
-  const { prospects } = useProspects();
-  const { leads } = useLeads();
-  const { orders } = useSampleOrders();
-  const { agreements } = useAgreements();
-  const [dropReasons, setDropReasons] = useState<Array<{ reason_text: string; step_number: number }>>([]);
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: subDays(new Date(), 30),
-    to: new Date(),
-  });
-
-  useEffect(() => {
-    supabase.from("drop_reasons").select("reason_text, step_number").eq("is_active", true)
-      .then(({ data }) => setDropReasons(data || []));
-  }, []);
-
-  const stats = useMemo(() => {
-    const from = dateRange?.from || subDays(new Date(), 30);
-    const to = dateRange?.to || new Date();
-
-    const inRange = (dateStr: string) => {
-      try {
-        const d = new Date(dateStr);
-        return isWithinInterval(d, { start: from, end: to });
-      } catch { return false; }
-    };
-
-    const filteredProspects = prospects.filter(p => inRange(p.created_at));
-    const availableProspects = filteredProspects.filter(p => p.status === "available" || p.status === "assigned");
-    const filteredLeads = leads.filter(l => inRange(l.created_at));
-    const qualifiedLeads = filteredLeads.filter(l => l.status !== "dropped");
-    const filteredOrders = orders.filter(o => inRange(o.created_at));
-    const filteredAgreements = agreements.filter(a => inRange(a.created_at));
-    const signedAgreements = filteredAgreements.filter(a => a.status === "signed");
-
-    const prospectToLead = availableProspects.length > 0
-      ? ((filteredLeads.length / availableProspects.length) * 100).toFixed(1) : "0.0";
-
-    const leadToSample = qualifiedLeads.length > 0
-      ? ((filteredOrders.length / qualifiedLeads.length) * 100).toFixed(1) : "0.0";
-
-    const sampleToAgreement = filteredOrders.length > 0
-      ? ((signedAgreements.length / filteredOrders.length) * 100).toFixed(1) : "0.0";
-
-    const endToEnd = filteredProspects.length > 0
-      ? ((signedAgreements.length / filteredProspects.length) * 100).toFixed(1) : "0.0";
-
-    // Avg days per stage
-    let stage1Days: number[] = [];
-    let stage2Days: number[] = [];
-    let stage3Days: number[] = [];
-
-    filteredLeads.forEach(lead => {
-      const prospect = prospects.find(p => p.id === lead.prospect_id);
-      if (prospect) {
-        const d = differenceInDays(new Date(lead.created_at), new Date(prospect.created_at));
-        if (d >= 0) stage1Days.push(d);
-      }
-    });
-
-    filteredOrders.forEach(order => {
-      const lead = leads.find(l => l.id === order.lead_id);
-      if (lead) {
-        const d = differenceInDays(new Date(order.created_at), new Date(lead.created_at));
-        if (d >= 0) stage2Days.push(d);
-      }
-    });
-
-    filteredAgreements.forEach(agr => {
-      const order = orders.find(o => o.id === agr.sample_order_id);
-      if (order) {
-        const d = differenceInDays(new Date(agr.created_at), new Date(order.created_at));
-        if (d >= 0) stage3Days.push(d);
-      }
-    });
-
-    const avg = (arr: number[]) => arr.length > 0 ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : "—";
-
-    // Drop-off per stage
-    const droppedProspects = filteredProspects.filter(p => p.tag === "Dropped").length;
-    const droppedLeads = filteredLeads.filter(l => l.status === "dropped").length;
-    const droppedOrders = filteredOrders.filter(o => o.status === "cancelled").length;
-
-    return {
-      prospectToLead,
-      leadToSample,
-      sampleToAgreement,
-      endToEnd,
-      avgStage1: avg(stage1Days),
-      avgStage2: avg(stage2Days),
-      avgStage3: avg(stage3Days),
-      totalProspects: filteredProspects.length,
-      totalLeads: filteredLeads.length,
-      totalOrders: filteredOrders.length,
-      totalAgreements: signedAgreements.length,
-      droppedProspects,
-      droppedLeads,
-      droppedOrders,
-    };
-  }, [prospects, leads, orders, agreements, dateRange]);
-
-  const funnelMetrics = [
-    { metric: "Prospect → Lead Conversion %", value: `${stats.prospectToLead}%`, definition: "Leads generated / Total available prospects" },
-    { metric: "Lead → Sample Order Conversion %", value: `${stats.leadToSample}%`, definition: "Sample orders placed / Total qualified leads" },
-    { metric: "Sample Order → Agreement Conversion %", value: `${stats.sampleToAgreement}%`, definition: "Agreements signed / Total sample orders" },
-    { metric: "End-to-End Conversion %", value: `${stats.endToEnd}%`, definition: "Agreements signed / Total prospects entered" },
-  ];
-
-  const avgDaysMetrics = [
-    { stage: "Prospect → Lead", days: stats.avgStage1 },
-    { stage: "Lead → Sample Order", days: stats.avgStage2 },
-    { stage: "Sample Order → Agreement", days: stats.avgStage3 },
-  ];
-
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <TrendingUp className="w-4 h-4" /> Funnel View
-          </CardTitle>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="text-xs h-7 gap-1.5">
-                <Filter className="w-3 h-3" />
-                {dateRange?.from ? (
-                  dateRange.to ? (
-                    `${format(dateRange.from, "MMM d")} – ${format(dateRange.to, "MMM d, yyyy")}`
-                  ) : format(dateRange.from, "MMM d, yyyy")
-                ) : "Select dates"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
-              <Calendar
-                mode="range"
-                selected={dateRange}
-                onSelect={setDateRange}
-                numberOfMonths={1}
-                className={cn("p-3 pointer-events-auto")}
-              />
-            </PopoverContent>
-          </Popover>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Funnel bar */}
-        <div className="flex items-end gap-1 h-20">
-          {[
-            { label: "Prospects", count: stats.totalProspects, color: "bg-primary" },
-            { label: "Leads", count: stats.totalLeads, color: "bg-secondary" },
-            { label: "Orders", count: stats.totalOrders, color: "bg-accent" },
-            { label: "Signed", count: stats.totalAgreements, color: "bg-info" },
-          ].map((item, i) => {
-            const maxCount = Math.max(stats.totalProspects, 1);
-            const heightPct = Math.max((item.count / maxCount) * 100, 8);
-            return (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-xs font-bold">{item.count}</span>
-                <div className={`w-full rounded-t ${item.color}`} style={{ height: `${heightPct}%` }} />
-                <span className="text-[10px] text-muted-foreground">{item.label}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Conversion metrics table */}
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-xs">Metric</TableHead>
-                <TableHead className="text-xs text-right">Value</TableHead>
-                <TableHead className="text-xs hidden sm:table-cell">Definition</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {funnelMetrics.map(m => (
-                <TableRow key={m.metric}>
-                  <TableCell className="text-xs font-medium">{m.metric}</TableCell>
-                  <TableCell className="text-xs text-right font-bold">{m.value}</TableCell>
-                  <TableCell className="text-[11px] text-muted-foreground hidden sm:table-cell">{m.definition}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-
-        {/* Average Days + Drop-offs side by side */}
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div>
-            <p className="text-xs font-semibold mb-2">Average Days per Stage</p>
-            <div className="space-y-2">
-              {avgDaysMetrics.map(m => (
-                <div key={m.stage} className="flex items-center justify-between bg-muted/50 rounded-md px-3 py-2">
-                  <span className="text-xs">{m.stage}</span>
-                  <span className="text-xs font-bold">{m.days === "—" ? "—" : `${m.days} days`}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className="text-xs font-semibold mb-2">Drop-off Distribution</p>
-            <div className="space-y-2">
-              {[
-                { stage: "Prospect stage", count: stats.droppedProspects },
-                { stage: "Lead stage", count: stats.droppedLeads },
-                { stage: "Sample Order stage", count: stats.droppedOrders },
-              ].map(d => (
-                <div key={d.stage} className="flex items-center justify-between bg-muted/50 rounded-md px-3 py-2">
-                  <span className="text-xs">{d.stage}</span>
-                  <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">
-                    {d.count} dropped
-                  </Badge>
-                </div>
-              ))}
-              {dropReasons.length > 0 && (
-                <div className="mt-2">
-                  <p className="text-[10px] text-muted-foreground mb-1">Common reasons:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {dropReasons.slice(0, 5).map((r, i) => (
-                      <Badge key={i} variant="outline" className="text-[9px]">{r.reason_text}</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+// FunnelView moved to FunnelViewPage.tsx
