@@ -27,7 +27,7 @@ import { useSampleOrders } from "@/hooks/useSampleOrders";
 import { useLeads } from "@/hooks/useLeads";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Search, CalendarIcon, Send, RotateCcw, XCircle, AlertTriangle,
+  Search, CalendarIcon, Send, RotateCcw, XCircle, AlertTriangle, Truck, Clock,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -49,14 +49,26 @@ const esignBadgeClass: Record<string, string> = {
 
 interface FormErrors { [key: string]: string; }
 
+// Helper to extract specs from remarks
+const extractSpecs = (remarks: string | null) => {
+  if (!remarks) return { pcsPerBox: "—", ripeness: "—", numBoxes: "—" };
+  const countMatch = remarks.match(/Count\/box:\s*(\d+)/);
+  const ripenessMatch = remarks.match(/Ripeness:\s*([^|]+)/);
+  return {
+    pcsPerBox: countMatch ? countMatch[1] : "—",
+    ripeness: ripenessMatch ? ripenessMatch[1].trim() : "—",
+    numBoxes: "—", // derived from sample_qty_units
+  };
+};
+
 export default function AgreementsPage() {
   const { agreements, loading, addAgreement, updateAgreement } = useAgreements();
-  const { orders } = useSampleOrders();
+  const { orders, updateOrder } = useSampleOrders();
   const { leads, updateLead } = useLeads();
   const partners = useDistributionPartners();
   const { toast } = useToast();
 
-  const [tab, setTab] = useState<"pending" | "completed" | "revisit" | "dropped">("pending");
+  const [tab, setTab] = useState<"pending_orders" | "delivered" | "revisit" | "completed" | "dropped">("pending_orders");
   const [search, setSearch] = useState("");
 
   // Completed tab filters
@@ -64,10 +76,21 @@ export default function AgreementsPage() {
   const [dateFrom, setDateFrom] = useState<Date | undefined>();
   const [dateTo, setDateTo] = useState<Date | undefined>();
 
+  // Deliver Order confirm dialog
+  const [deliverOpen, setDeliverOpen] = useState(false);
+  const [deliverOrderId, setDeliverOrderId] = useState<string | null>(null);
+  const [deliverError, setDeliverError] = useState("");
+
+  // Reschedule dialog
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [rescheduleOrderId, setRescheduleOrderId] = useState<string | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState<Date | undefined>();
+  const [rescheduleTime, setRescheduleTime] = useState("");
+
   // Send Agreement dialog
   const [sendOpen, setSendOpen] = useState(false);
   const [sendOrderId, setSendOrderId] = useState<string | null>(null);
-  const [sendAgreementId, setSendAgreementId] = useState<string | null>(null); // for revisits
+  const [sendAgreementId, setSendAgreementId] = useState<string | null>(null);
 
   // Quality feedback
   const [feedback, setFeedback] = useState<"positive" | "negative" | "">("");
@@ -106,7 +129,7 @@ export default function AgreementsPage() {
   const [dropReason, setDropReason] = useState("");
   const [dropRemarks, setDropRemarks] = useState("");
 
-  // Enriched data
+  // Enriched agreements
   const enriched = useMemo(() => {
     return agreements.map(a => {
       const order = orders.find(o => o.id === a.sample_order_id);
@@ -115,44 +138,48 @@ export default function AgreementsPage() {
     });
   }, [agreements, orders, leads]);
 
-  // Quality Pending: sample orders delivered without agreement OR with pending_feedback agreement
-  const pendingItems = useMemo(() => {
+  // Orders with leads
+  const ordersWithLeads = useMemo(() =>
+    orders.map(o => ({ ...o, lead: leads.find(l => l.id === o.lead_id) })),
+    [orders, leads]
+  );
+
+  // Tab 1: Pending Orders - sample_ordered status (not yet delivered)
+  const pendingOrders = useMemo(() => {
+    let items = ordersWithLeads.filter(o => o.status === "sample_ordered");
+    if (search) {
+      const s = search.toLowerCase();
+      items = items.filter(o => (o.lead?.client_name || "").toLowerCase().includes(s));
+    }
+    return items;
+  }, [ordersWithLeads, search]);
+
+  // Tab 2: Delivered Orders - sample_delivered without agreement OR pending_feedback agreement
+  const deliveredItems = useMemo(() => {
     const agreementOrderIds = new Set(agreements.map(a => a.sample_order_id));
-    const fromOrders = orders
-      .filter(o => ["sample_ordered", "sample_delivered"].includes(o.status) && !agreementOrderIds.has(o.id))
-      .map(o => {
-        const lead = leads.find(l => l.id === o.lead_id);
-        return { type: "order" as const, orderId: o.id, agreementId: null, clientName: lead?.client_name || "Unknown", deliveredDate: o.delivery_date || o.updated_at, kam: lead?.created_by || "—", lead, order: o };
-      });
+    const fromOrders = ordersWithLeads
+      .filter(o => o.status === "sample_delivered" && !agreementOrderIds.has(o.id))
+      .map(o => ({
+        type: "order" as const, orderId: o.id, agreementId: null,
+        leadName: o.lead?.client_name || "Unknown", deliveredDate: o.delivery_date || o.updated_at,
+        lead: o.lead, order: o,
+      }));
     const fromAgreements = enriched
       .filter(a => a.status === "pending_feedback")
       .map(a => ({
-        type: "agreement" as const, orderId: a.sample_order_id, agreementId: a.id, clientName: a.lead?.client_name || "Unknown", deliveredDate: a.order?.delivery_date || a.created_at, kam: a.lead?.created_by || "—", lead: a.lead, order: a.order,
+        type: "agreement" as const, orderId: a.sample_order_id, agreementId: a.id,
+        leadName: a.lead?.client_name || "Unknown", deliveredDate: a.order?.delivery_date || a.created_at,
+        lead: a.lead, order: a.order,
       }));
     let items = [...fromOrders, ...fromAgreements];
     if (search) {
       const s = search.toLowerCase();
-      items = items.filter(i => i.clientName.toLowerCase().includes(s));
+      items = items.filter(i => i.leadName.toLowerCase().includes(s));
     }
     return items;
-  }, [orders, agreements, enriched, leads, search]);
+  }, [ordersWithLeads, agreements, enriched, search]);
 
-  // Completed: agreement_sent or signed
-  const completedItems = useMemo(() => {
-    let items = enriched.filter(a => ["agreement_sent", "signed"].includes(a.status));
-    if (search) {
-      const s = search.toLowerCase();
-      items = items.filter(a => (a.lead?.client_name || "").toLowerCase().includes(s));
-    }
-    if (filterEsign && filterEsign !== "all") {
-      items = items.filter(a => a.esign_status === filterEsign);
-    }
-    if (dateFrom) items = items.filter(a => new Date(a.created_at) >= dateFrom);
-    if (dateTo) items = items.filter(a => new Date(a.created_at) <= dateTo);
-    return items;
-  }, [enriched, search, filterEsign, dateFrom, dateTo]);
-
-  // Revisits
+  // Tab 3: Revisits
   const revisitItems = useMemo(() => {
     let items = enriched.filter(a => a.status === "revisit_needed");
     if (search) {
@@ -162,7 +189,20 @@ export default function AgreementsPage() {
     return items;
   }, [enriched, search]);
 
-  // Dropped
+  // Tab 4: Completed
+  const completedItems = useMemo(() => {
+    let items = enriched.filter(a => ["agreement_sent", "signed"].includes(a.status));
+    if (search) {
+      const s = search.toLowerCase();
+      items = items.filter(a => (a.lead?.client_name || "").toLowerCase().includes(s));
+    }
+    if (filterEsign && filterEsign !== "all") items = items.filter(a => a.esign_status === filterEsign);
+    if (dateFrom) items = items.filter(a => new Date(a.created_at) >= dateFrom);
+    if (dateTo) items = items.filter(a => new Date(a.created_at) <= dateTo);
+    return items;
+  }, [enriched, search, filterEsign, dateFrom, dateTo]);
+
+  // Tab 5: Dropped
   const droppedItems = useMemo(() => {
     let items = enriched.filter(a => a.status === "lost");
     if (search) {
@@ -173,11 +213,12 @@ export default function AgreementsPage() {
   }, [enriched, search]);
 
   const counts = useMemo(() => ({
-    pending: pendingItems.length,
-    completed: completedItems.length,
+    pending_orders: pendingOrders.length,
+    delivered: deliveredItems.length,
     revisit: revisitItems.length,
+    completed: completedItems.length,
     dropped: droppedItems.length,
-  }), [pendingItems, completedItems, revisitItems, droppedItems]);
+  }), [pendingOrders, deliveredItems, revisitItems, completedItems, droppedItems]);
 
   const marginWarning = useMemo(() => {
     if (!agreedPrice) return false;
@@ -186,24 +227,12 @@ export default function AgreementsPage() {
   }, [agreedPrice]);
 
   const resetSendForm = () => {
-    setSendOrderId(null);
-    setSendAgreementId(null);
-    setFeedback("");
-    setFeedbackRemarks("");
-    setPricingType("");
-    setAgreedPrice("");
-    setPaymentType("");
-    setCreditDays("");
-    setOutletsInBangalore("");
-    setOtherCities("");
-    setDeliverySlot("");
-    setDistributionPartner("");
-    setExpectedFirstOrder(undefined);
-    setExpectedWeeklyVolume("");
-    setSelectedSkus([]);
-    setMailId("");
-    setKamRemarks("");
-    setErrors({});
+    setSendOrderId(null); setSendAgreementId(null);
+    setFeedback(""); setFeedbackRemarks("");
+    setPricingType(""); setAgreedPrice(""); setPaymentType(""); setCreditDays("");
+    setOutletsInBangalore(""); setOtherCities(""); setDeliverySlot(""); setDistributionPartner("");
+    setExpectedFirstOrder(undefined); setExpectedWeeklyVolume("");
+    setSelectedSkus([]); setMailId(""); setKamRemarks(""); setErrors({});
   };
 
   const validate = (): FormErrors => {
@@ -235,139 +264,101 @@ export default function AgreementsPage() {
     }
   };
 
+  // === Deliver Order ===
+  const openDeliverDialog = (orderId: string) => {
+    setDeliverOrderId(orderId);
+    setDeliverError("");
+    setDeliverOpen(true);
+  };
+
+  const handleDeliverOrder = async () => {
+    if (!deliverOrderId) return;
+    const lead = getLeadForOrder(deliverOrderId);
+
+    // Check user distance from lead location
+    if (lead?.geo_lat && lead?.geo_lng && navigator.geolocation) {
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
+        );
+        const dist = getDistanceKm(pos.coords.latitude, pos.coords.longitude, Number(lead.geo_lat), Number(lead.geo_lng));
+        if (dist > 2) {
+          setDeliverError("You are far from Lead's location");
+          return;
+        }
+      } catch {
+        // If geolocation fails, show location error
+        setDeliverError("You are far from Lead's location");
+        return;
+      }
+    }
+
+    await updateOrder(deliverOrderId, { status: "sample_delivered" });
+    await incrementVisitCount(deliverOrderId);
+    toast({ title: "Order delivered successfully" });
+    setDeliverOpen(false);
+    setDeliverOrderId(null);
+  };
+
+  // === Reschedule ===
+  const openRescheduleDialog = (orderId: string) => {
+    setRescheduleOrderId(orderId);
+    setRescheduleDate(undefined);
+    setRescheduleTime("");
+    setRescheduleOpen(true);
+  };
+
+  const handleReschedule = async () => {
+    if (!rescheduleOrderId || !rescheduleDate) return;
+    await updateOrder(rescheduleOrderId, {
+      delivery_date: format(rescheduleDate, "yyyy-MM-dd"),
+      delivery_slot: rescheduleTime || null,
+    });
+    await incrementVisitCount(rescheduleOrderId);
+    toast({ title: `Delivery rescheduled to ${format(rescheduleDate, "dd MMM yyyy")}` });
+    setRescheduleOpen(false);
+  };
+
+  // === Send Agreement ===
   const handleSendAgreement = async () => {
     const e = validate();
     setErrors(e);
     if (Object.keys(e).length > 0) return;
-
     const orderId = sendOrderId;
     if (!orderId) return;
 
+    const agreementData = {
+      quality_feedback: feedback === "positive",
+      quality_remarks: feedbackRemarks || null,
+      pricing_type: pricingType,
+      agreed_price_per_kg: Number(agreedPrice),
+      payment_type: paymentType,
+      credit_days: paymentType === "credit" ? Number(creditDays) : null,
+      outlets_in_bangalore: Number(outletsInBangalore),
+      other_cities: otherCities ? otherCities.split(",").map(c => c.trim()).filter(Boolean) : null,
+      delivery_slot: deliverySlot,
+      distribution_partner: distributionPartner,
+      expected_first_order_date: expectedFirstOrder ? format(expectedFirstOrder, "yyyy-MM-dd") : null,
+      expected_weekly_volume_kg: Number(expectedWeeklyVolume),
+      other_skus: selectedSkus.length > 0 ? selectedSkus : null,
+      mail_id: mailId,
+      remarks: kamRemarks || null,
+      status: "agreement_sent",
+      esign_status: "sent",
+    };
+
+    let ok: boolean;
     if (sendAgreementId) {
-      // Updating existing agreement from revisit
-      const ok = await updateAgreement(sendAgreementId, {
-        quality_feedback: feedback === "positive",
-        quality_remarks: feedbackRemarks || null,
-        pricing_type: pricingType,
-        agreed_price_per_kg: Number(agreedPrice),
-        payment_type: paymentType,
-        credit_days: paymentType === "credit" ? Number(creditDays) : null,
-        outlets_in_bangalore: Number(outletsInBangalore),
-        other_cities: otherCities ? otherCities.split(",").map(c => c.trim()).filter(Boolean) : null,
-        delivery_slot: deliverySlot,
-        distribution_partner: distributionPartner,
-        expected_first_order_date: expectedFirstOrder ? format(expectedFirstOrder, "yyyy-MM-dd") : null,
-        expected_weekly_volume_kg: Number(expectedWeeklyVolume),
-        other_skus: selectedSkus.length > 0 ? selectedSkus : null,
-        mail_id: mailId,
-        remarks: kamRemarks || null,
-        status: "agreement_sent",
-        esign_status: "sent",
-      });
-      if (ok) {
-        await incrementVisitCount(orderId);
-        toast({ title: `Agreement sent to ${mailId}` });
-        resetSendForm();
-        setSendOpen(false);
-      }
+      ok = await updateAgreement(sendAgreementId, agreementData);
     } else {
-      // New agreement
-      const ok = await addAgreement({
-        sample_order_id: orderId,
-        quality_feedback: feedback === "positive",
-        quality_remarks: feedbackRemarks || null,
-        pricing_type: pricingType,
-        agreed_price_per_kg: Number(agreedPrice),
-        payment_type: paymentType,
-        credit_days: paymentType === "credit" ? Number(creditDays) : null,
-        outlets_in_bangalore: Number(outletsInBangalore),
-        other_cities: otherCities ? otherCities.split(",").map(c => c.trim()).filter(Boolean) : null,
-        delivery_slot: deliverySlot,
-        distribution_partner: distributionPartner,
-        expected_first_order_date: expectedFirstOrder ? format(expectedFirstOrder, "yyyy-MM-dd") : null,
-        expected_weekly_volume_kg: Number(expectedWeeklyVolume),
-        other_skus: selectedSkus.length > 0 ? selectedSkus : null,
-        mail_id: mailId,
-        remarks: kamRemarks || null,
-        status: "agreement_sent",
-        esign_status: "sent",
-      });
-      if (ok) {
-        await incrementVisitCount(orderId);
-        toast({ title: `Agreement sent to ${mailId}` });
-        resetSendForm();
-        setSendOpen(false);
-      }
+      ok = await addAgreement({ sample_order_id: orderId, ...agreementData });
     }
-  };
-
-  const handleScheduleRevisit = async () => {
-    if (!revisitFeedback || !revisitDate || !revisitRemarks.trim()) return;
-    const orderId = revisitOrderId;
-    if (!orderId) return;
-
-    const timeStr = revisitTime ? ` at ${revisitTime}` : "";
-    const remarksStr = `[Re-visit: ${format(revisitDate, "dd MMM yyyy")}${timeStr}] Feedback: ${revisitFeedback}. ${revisitFeedbackRemarks ? revisitFeedbackRemarks + ". " : ""}${revisitRemarks}`;
-
-    if (revisitAgreementId) {
-      await updateAgreement(revisitAgreementId, {
-        status: "revisit_needed",
-        quality_feedback: revisitFeedback === "positive",
-        quality_remarks: revisitFeedbackRemarks || null,
-        remarks: remarksStr,
-      });
-    } else {
-      await addAgreement({
-        sample_order_id: orderId,
-        status: "revisit_needed",
-        quality_feedback: revisitFeedback === "positive",
-        quality_remarks: revisitFeedbackRemarks || null,
-        remarks: remarksStr,
-      });
+    if (ok) {
+      await incrementVisitCount(orderId);
+      toast({ title: `Agreement sent to ${mailId}` });
+      resetSendForm();
+      setSendOpen(false);
     }
-    await incrementVisitCount(orderId);
-    toast({ title: `Revisit scheduled for ${format(revisitDate, "dd MMM yyyy")}${timeStr}` });
-    setRevisitOpen(false);
-    setRevisitOrderId(null);
-    setRevisitAgreementId(null);
-    setRevisitFeedback("");
-    setRevisitFeedbackRemarks("");
-    setRevisitDate(undefined);
-    setRevisitTime("");
-    setRevisitRemarks("");
-  };
-
-  const handleNotInterested = async () => {
-    if (!dropReason || !dropRemarks.trim()) return;
-    const orderId = dropOrderId;
-    if (!orderId) return;
-
-    const lead = getLeadForOrder(orderId);
-    const totalVisits = lead?.visit_count || 0;
-
-    // Increment visit count
-    if (lead) {
-      await updateLead(lead.id, { visit_count: (lead.visit_count || 0) + 1 });
-    }
-
-    if (dropAgreementId) {
-      await updateAgreement(dropAgreementId, {
-        status: "lost",
-        remarks: `[Dropped] ${dropReason}: ${dropRemarks}. Total visits: ${totalVisits + 1}`,
-      });
-    } else {
-      await addAgreement({
-        sample_order_id: orderId,
-        status: "lost",
-        remarks: `[Dropped] ${dropReason}: ${dropRemarks}. Total visits: ${totalVisits + 1}`,
-      });
-    }
-    toast({ title: "Marked as not interested", variant: "destructive" });
-    setDropOpen(false);
-    setDropOrderId(null);
-    setDropAgreementId(null);
-    setDropReason("");
-    setDropRemarks("");
   };
 
   const openSendAgreement = (orderId: string, agreementId?: string | null) => {
@@ -377,23 +368,53 @@ export default function AgreementsPage() {
     setSendOpen(true);
   };
 
+  // === Schedule Revisit ===
   const openScheduleRevisit = (orderId: string, agreementId?: string | null) => {
     setRevisitOrderId(orderId);
     setRevisitAgreementId(agreementId || null);
-    setRevisitFeedback("");
-    setRevisitFeedbackRemarks("");
-    setRevisitDate(undefined);
-    setRevisitTime("");
-    setRevisitRemarks("");
+    setRevisitFeedback(""); setRevisitFeedbackRemarks("");
+    setRevisitDate(undefined); setRevisitTime(""); setRevisitRemarks("");
     setRevisitOpen(true);
   };
 
+  const handleScheduleRevisit = async () => {
+    if (!revisitFeedback || !revisitDate || !revisitRemarks.trim()) return;
+    const orderId = revisitOrderId;
+    if (!orderId) return;
+    const timeStr = revisitTime ? ` at ${revisitTime}` : "";
+    const remarksStr = `[Re-visit: ${format(revisitDate, "dd MMM yyyy")}${timeStr}] Feedback: ${revisitFeedback}. ${revisitFeedbackRemarks ? revisitFeedbackRemarks + ". " : ""}${revisitRemarks}`;
+
+    if (revisitAgreementId) {
+      await updateAgreement(revisitAgreementId, { status: "revisit_needed", quality_feedback: revisitFeedback === "positive", quality_remarks: revisitFeedbackRemarks || null, remarks: remarksStr });
+    } else {
+      await addAgreement({ sample_order_id: orderId, status: "revisit_needed", quality_feedback: revisitFeedback === "positive", quality_remarks: revisitFeedbackRemarks || null, remarks: remarksStr });
+    }
+    await incrementVisitCount(orderId);
+    toast({ title: `Revisit scheduled for ${format(revisitDate, "dd MMM yyyy")}${timeStr}` });
+    setRevisitOpen(false);
+  };
+
+  // === Not Interested ===
   const openNotInterested = (orderId: string, agreementId?: string | null) => {
-    setDropOrderId(orderId);
-    setDropAgreementId(agreementId || null);
-    setDropReason("");
-    setDropRemarks("");
-    setDropOpen(true);
+    setDropOrderId(orderId); setDropAgreementId(agreementId || null);
+    setDropReason(""); setDropRemarks(""); setDropOpen(true);
+  };
+
+  const handleNotInterested = async () => {
+    if (!dropReason || !dropRemarks.trim()) return;
+    const orderId = dropOrderId;
+    if (!orderId) return;
+    const lead = getLeadForOrder(orderId);
+    const totalVisits = lead?.visit_count || 0;
+    if (lead) await updateLead(lead.id, { visit_count: totalVisits + 1 });
+
+    if (dropAgreementId) {
+      await updateAgreement(dropAgreementId, { status: "lost", remarks: `[Dropped] ${dropReason}: ${dropRemarks}. Total visits: ${totalVisits + 1}` });
+    } else {
+      await addAgreement({ sample_order_id: orderId, status: "lost", remarks: `[Dropped] ${dropReason}: ${dropRemarks}. Total visits: ${totalVisits + 1}` });
+    }
+    toast({ title: "Marked as not interested", variant: "destructive" });
+    setDropOpen(false);
   };
 
   const extractRevisitDate = (remarks: string | null) => {
@@ -417,31 +438,34 @@ export default function AgreementsPage() {
 
   const FieldError = ({ msg }: { msg?: string }) => msg ? <p className="text-xs text-destructive mt-0.5">{msg}</p> : null;
 
-  const ActionButtons = ({ orderId, agreementId }: { orderId: string; agreementId?: string | null }) => (
-    <div className="flex gap-1 flex-wrap">
-      <Button size="sm" className="text-xs h-7" onClick={() => openSendAgreement(orderId, agreementId)}>
-        <Send className="w-3 h-3 mr-1" /> Send Agreement
-      </Button>
-      <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => openNotInterested(orderId, agreementId)}>
-        <XCircle className="w-3 h-3 mr-1" /> Not Interested
-      </Button>
-    </div>
-  );
+  // Get order specs for Send Agreement dialog summary
+  const getOrderSummary = (orderId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return null;
+    const specs = extractSpecs(order.remarks);
+    return {
+      deliveryDate: order.delivery_date ? format(new Date(order.delivery_date), "dd MMM yyyy") : "—",
+      pcsPerBox: specs.pcsPerBox,
+      ripeness: specs.ripeness,
+      numBoxes: order.sample_qty_units ? String(order.sample_qty_units) : "—",
+    };
+  };
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold text-foreground">Step 4: Sample Order to Agreement</h1>
         <p className="text-sm text-muted-foreground">
-          {counts.pending} pending · {counts.completed} completed · {counts.revisit} revisits
+          {counts.pending_orders} pending · {counts.delivered} delivered · {counts.completed} completed · {counts.revisit} revisits
         </p>
       </div>
 
       <Tabs value={tab} onValueChange={v => setTab(v as any)}>
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="pending" className="text-xs">Quality Pending ({counts.pending})</TabsTrigger>
-          <TabsTrigger value="completed" className="text-xs">Completed ({counts.completed})</TabsTrigger>
+        <TabsList className="w-full sm:w-auto flex-wrap">
+          <TabsTrigger value="pending_orders" className="text-xs">Pending Orders ({counts.pending_orders})</TabsTrigger>
+          <TabsTrigger value="delivered" className="text-xs">Delivered ({counts.delivered})</TabsTrigger>
           <TabsTrigger value="revisit" className="text-xs">Revisits ({counts.revisit})</TabsTrigger>
+          <TabsTrigger value="completed" className="text-xs">Completed ({counts.completed})</TabsTrigger>
           <TabsTrigger value="dropped" className="text-xs">Drop-outs ({counts.dropped})</TabsTrigger>
         </TabsList>
 
@@ -449,7 +473,7 @@ export default function AgreementsPage() {
         <div className="flex flex-col sm:flex-row gap-2 mt-3">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search client name..." className="pl-8 h-9 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
+            <Input placeholder="Search lead name..." className="pl-8 h-9 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           {tab === "completed" && (
             <>
@@ -490,37 +514,94 @@ export default function AgreementsPage() {
           )}
         </div>
 
-        {/* Quality Pending Tab */}
-        <TabsContent value="pending" className="mt-3">
+        {/* Tab 1: Pending Orders */}
+        <TabsContent value="pending_orders" className="mt-3">
           <Card>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="text-xs">Client Name</TableHead>
-                      <TableHead className="text-xs">Visits</TableHead>
-                      <TableHead className="text-xs hidden sm:table-cell">Sample Delivered</TableHead>
-                      <TableHead className="text-xs hidden md:table-cell">KAM</TableHead>
+                      <TableHead className="text-xs">Lead Name</TableHead>
+                      <TableHead className="text-xs">Delivery Date</TableHead>
+                      <TableHead className="text-xs">Pcs per Box</TableHead>
+                      <TableHead className="text-xs">Ripeness</TableHead>
+                      <TableHead className="text-xs">No of Boxes</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loading ? (
-                       <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
-                    ) : pendingItems.length === 0 ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No sample orders pending quality feedback.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                    ) : pendingOrders.length === 0 ? (
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No pending orders.</TableCell></TableRow>
                     ) : (
-                      pendingItems.map(item => (
+                      pendingOrders.map(o => {
+                        const specs = extractSpecs(o.remarks);
+                        return (
+                          <TableRow key={o.id} className="text-sm">
+                            <TableCell className="font-medium max-w-[180px] truncate">{o.lead?.client_name || "Unknown"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {o.delivery_date ? format(new Date(o.delivery_date), "dd MMM yyyy") : "—"}
+                            </TableCell>
+                            <TableCell className="text-xs">{specs.pcsPerBox}</TableCell>
+                            <TableCell className="text-xs">{specs.ripeness}</TableCell>
+                            <TableCell className="text-xs">{o.sample_qty_units || "—"}</TableCell>
+                            <TableCell>
+                              <div className="flex gap-1 flex-wrap">
+                                <Button size="sm" className="text-xs h-7" onClick={() => openDeliverDialog(o.id)}>
+                                  <Truck className="w-3 h-3 mr-1" /> Deliver
+                                </Button>
+                                <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openRescheduleDialog(o.id)}>
+                                  <Clock className="w-3 h-3 mr-1" /> Reschedule
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab 2: Delivered Orders */}
+        <TabsContent value="delivered" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Lead Name</TableHead>
+                      <TableHead className="text-xs">Visits</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Sample Delivered</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {deliveredItems.length === 0 ? (
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No delivered orders pending feedback.</TableCell></TableRow>
+                    ) : (
+                      deliveredItems.map(item => (
                         <TableRow key={item.orderId} className="text-sm">
-                          <TableCell className="font-medium max-w-[180px] truncate">{item.clientName}</TableCell>
+                          <TableCell className="font-medium max-w-[180px] truncate">{item.leadName}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{item.lead?.visit_count || 0}</TableCell>
                           <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">
                             {item.deliveredDate ? format(new Date(item.deliveredDate), "dd MMM") : "—"}
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{item.kam}</TableCell>
                           <TableCell>
-                            <ActionButtons orderId={item.orderId} agreementId={item.agreementId} />
+                            <div className="flex gap-1 flex-wrap">
+                              <Button size="sm" className="text-xs h-7" onClick={() => openSendAgreement(item.orderId, item.agreementId)}>
+                                <Send className="w-3 h-3 mr-1" /> Send Agreement
+                              </Button>
+                              <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => openNotInterested(item.orderId, item.agreementId)}>
+                                <XCircle className="w-3 h-3 mr-1" /> Not Interested
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
@@ -532,7 +613,53 @@ export default function AgreementsPage() {
           </Card>
         </TabsContent>
 
-        {/* Completed Tab */}
+        {/* Tab 3: Revisits */}
+        <TabsContent value="revisit" className="mt-3">
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Lead Name</TableHead>
+                      <TableHead className="text-xs">Next Visit</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Last Feedback</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {revisitItems.length === 0 ? (
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No revisits scheduled.</TableCell></TableRow>
+                    ) : (
+                      revisitItems.map(a => {
+                        const nextVisit = extractRevisitDate(a.remarks);
+                        return (
+                          <TableRow key={a.id} className="text-sm">
+                            <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
+                            <TableCell className="text-xs">{nextVisit || "—"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
+                            <TableCell>
+                              <div className="flex gap-1 flex-wrap">
+                                <Button size="sm" className="text-xs h-7" onClick={() => openSendAgreement(a.sample_order_id, a.id)}>
+                                  <Send className="w-3 h-3 mr-1" /> Send Agreement
+                                </Button>
+                                <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => openNotInterested(a.sample_order_id, a.id)}>
+                                  <XCircle className="w-3 h-3 mr-1" /> Not Interested
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab 4: Completed */}
         <TabsContent value="completed" className="mt-3">
           <Card>
             <CardContent className="p-0">
@@ -540,7 +667,7 @@ export default function AgreementsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs">Lead Name</TableHead>
                       <TableHead className="text-xs">Total Visits</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Sent Date</TableHead>
                       <TableHead className="text-xs">E-sign</TableHead>
@@ -557,9 +684,7 @@ export default function AgreementsPage() {
                         <TableRow key={a.id} className="text-sm">
                           <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{a.lead?.visit_count || 0}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">
-                            {format(new Date(a.created_at), "dd MMM")}
-                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{format(new Date(a.created_at), "dd MMM")}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className={`text-[10px] ${esignBadgeClass[a.esign_status || "not_sent"]}`}>
                               {(a.esign_status || "not_sent").replace(/_/g, " ")}
@@ -578,54 +703,7 @@ export default function AgreementsPage() {
           </Card>
         </TabsContent>
 
-        {/* Revisits Tab */}
-        <TabsContent value="revisit" className="mt-3">
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-xs">Client Name</TableHead>
-                      <TableHead className="text-xs">Visits</TableHead>
-                      <TableHead className="text-xs">Next Visit</TableHead>
-                      <TableHead className="text-xs hidden sm:table-cell">Last Feedback</TableHead>
-                      <TableHead className="text-xs">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {revisitItems.length === 0 ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No revisits scheduled.</TableCell></TableRow>
-                    ) : (
-                      revisitItems.map(a => {
-                        const nextVisit = extractRevisitDate(a.remarks);
-                        const lead = a.lead;
-                        return (
-                          <TableRow key={a.id} className="text-sm">
-                            <TableCell className="font-medium max-w-[180px] truncate">
-                              {a.lead?.client_name || "Unknown"}
-                              <Badge variant="outline" className="ml-1 text-[10px] bg-accent/10 text-accent border-accent/20">
-                                {lead?.visit_count || 0} {(lead?.visit_count || 0) === 1 ? "visit" : "visits"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{lead?.visit_count || 0}</TableCell>
-                            <TableCell className="text-xs">{nextVisit || "—"}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
-                            <TableCell>
-                              <ActionButtons orderId={a.sample_order_id} agreementId={a.id} />
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Drop-outs Tab */}
+        {/* Tab 5: Drop-outs */}
         <TabsContent value="dropped" className="mt-3">
           <Card>
             <CardContent className="p-0">
@@ -633,7 +711,7 @@ export default function AgreementsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs">Lead Name</TableHead>
                       <TableHead className="text-xs">Total Visits</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Last Feedback</TableHead>
                       <TableHead className="text-xs">Reason</TableHead>
@@ -649,12 +727,7 @@ export default function AgreementsPage() {
                         const { reason, finalRemarks } = extractDropInfo(a.remarks);
                         return (
                           <TableRow key={a.id} className="text-sm">
-                            <TableCell className="font-medium max-w-[180px] truncate">
-                              {a.lead?.client_name || "Unknown"}
-                              <Badge variant="outline" className="ml-1 text-[10px] bg-accent/10 text-accent border-accent/20">
-                                {a.lead?.visit_count || 0} {(a.lead?.visit_count || 0) === 1 ? "visit" : "visits"}
-                              </Badge>
-                            </TableCell>
+                            <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">{a.lead?.visit_count || 0}</TableCell>
                             <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
                             <TableCell className="text-xs">{reason}</TableCell>
@@ -672,27 +745,87 @@ export default function AgreementsPage() {
         </TabsContent>
       </Tabs>
 
+      {/* Deliver Order Confirm Dialog */}
+      <Dialog open={deliverOpen} onOpenChange={open => { if (!open) setDeliverOpen(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Confirm Delivery</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Are you sure you want to mark this order as delivered?</p>
+          {deliverError && (
+            <div className="bg-destructive/10 border border-destructive/20 text-destructive text-sm p-3 rounded-md flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              {deliverError}
+            </div>
+          )}
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+            <Button size="sm" onClick={handleDeliverOrder}>
+              <Truck className="w-3 h-3 mr-1" /> Confirm Delivery
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reschedule Delivery Dialog */}
+      <Dialog open={rescheduleOpen} onOpenChange={open => { if (!open) setRescheduleOpen(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Reschedule Delivery</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs">New Delivery Date *</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className={cn("h-8 text-xs w-full justify-start", !rescheduleDate && "text-muted-foreground")}>
+                    <CalendarIcon className="w-3 h-3 mr-1" />
+                    {rescheduleDate ? format(rescheduleDate, "dd MMM yyyy") : "Pick date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={rescheduleDate} onSelect={setRescheduleDate} initialFocus className="p-3 pointer-events-auto" />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Time</Label>
+              <Input type="time" value={rescheduleTime} onChange={e => setRescheduleTime(e.target.value)} className="h-8 text-xs" />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+            <Button size="sm" onClick={handleReschedule} disabled={!rescheduleDate}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Send Agreement Dialog */}
       <Dialog open={sendOpen} onOpenChange={open => { if (!open) { setSendOpen(false); resetSendForm(); } }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Send Agreement</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-2">
 
-            {/* Client info summary */}
+            {/* Client info + order summary */}
             {sendOrderId && (() => {
               const lead = getLeadForOrder(sendOrderId);
+              const summary = getOrderSummary(sendOrderId);
               if (!lead) return null;
               return (
                 <div className="bg-muted/50 p-3 rounded-md text-xs grid grid-cols-2 gap-1">
-                  <span><strong>Client:</strong> {lead.client_name}</span>
+                  <span><strong>Lead:</strong> {lead.client_name}</span>
                   <span><strong>Pincode:</strong> {lead.pincode}</span>
                   {lead.purchase_manager_name && <span><strong>PM:</strong> {lead.purchase_manager_name}</span>}
                   {lead.contact_number && <span><strong>Phone:</strong> {lead.contact_number}</span>}
+                  {summary && (
+                    <>
+                      <span><strong>Delivery Date:</strong> {summary.deliveryDate}</span>
+                      <span><strong>Pcs/Box:</strong> {summary.pcsPerBox}</span>
+                      <span><strong>Ripeness:</strong> {summary.ripeness}</span>
+                      <span><strong>No of Boxes:</strong> {summary.numBoxes}</span>
+                    </>
+                  )}
                 </div>
               );
             })()}
 
-            {/* Section 1: Quality Feedback */}
+            {/* Quality Feedback */}
             <div className="space-y-3">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Quality Feedback</p>
               <div className="space-y-1">
@@ -715,10 +848,9 @@ export default function AgreementsPage() {
               </div>
             </div>
 
-            {/* Section 2: Agreement Details */}
+            {/* Commercial Terms */}
             <div className="space-y-4 border-t pt-4">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Commercial Terms</p>
-
               <div className="space-y-1">
                 <Label className="text-xs">Pricing Type *</Label>
                 <RadioGroup value={pricingType} onValueChange={setPricingType} className="flex flex-wrap gap-3">
@@ -731,7 +863,6 @@ export default function AgreementsPage() {
                 </RadioGroup>
                 <FieldError msg={errors.pricingType} />
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Agreed Price per Kg (₹) *</Label>
@@ -744,7 +875,6 @@ export default function AgreementsPage() {
                   <FieldError msg={errors.agreedPrice} />
                 </div>
               </div>
-
               <div className="space-y-1">
                 <Label className="text-xs">Payment Type *</Label>
                 <RadioGroup value={paymentType} onValueChange={setPaymentType} className="flex gap-4">
@@ -759,7 +889,6 @@ export default function AgreementsPage() {
                 </RadioGroup>
                 <FieldError msg={errors.paymentType} />
               </div>
-
               {paymentType === "credit" && (
                 <div className="space-y-1">
                   <Label className="text-xs">Credit Days *</Label>
@@ -772,7 +901,6 @@ export default function AgreementsPage() {
             {/* Operational Details */}
             <div className="space-y-3 border-t pt-4">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Operational Details</p>
-
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Outlets in Bangalore *</Label>
@@ -784,7 +912,6 @@ export default function AgreementsPage() {
                   <Input value={otherCities} onChange={e => setOtherCities(e.target.value)} className="h-8 text-xs" placeholder="Mumbai, Delhi" />
                 </div>
               </div>
-
               <div className="space-y-1">
                 <Label className="text-xs">Delivery Slot *</Label>
                 <RadioGroup value={deliverySlot} onValueChange={setDeliverySlot} className="flex gap-4">
@@ -799,7 +926,6 @@ export default function AgreementsPage() {
                 </RadioGroup>
                 <FieldError msg={errors.deliverySlot} />
               </div>
-
               <div className="space-y-1">
                 <Label className="text-xs">Distribution Partner *</Label>
                 <Select value={distributionPartner} onValueChange={setDistributionPartner}>
@@ -812,7 +938,6 @@ export default function AgreementsPage() {
                 </Select>
                 <FieldError msg={errors.distributionPartner} />
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Expected First Order Date *</Label>
@@ -840,7 +965,6 @@ export default function AgreementsPage() {
             {/* Additional */}
             <div className="space-y-3 border-t pt-4">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Additional</p>
-
               <div className="space-y-1">
                 <Label className="text-xs">Other SKUs Interest</Label>
                 <div className="flex flex-wrap gap-3">
@@ -858,13 +982,11 @@ export default function AgreementsPage() {
                   ))}
                 </div>
               </div>
-
               <div className="space-y-1">
                 <Label className="text-xs">Mail ID *</Label>
                 <Input type="email" value={mailId} onChange={e => setMailId(e.target.value)} className="h-8 text-xs" placeholder="client@example.com" />
                 <FieldError msg={errors.mailId} />
               </div>
-
               <div className="space-y-1">
                 <Label className="text-xs">KAM Remarks</Label>
                 <Textarea value={kamRemarks} onChange={e => setKamRemarks(e.target.value)} className="text-xs min-h-[60px]" placeholder="Any additional notes..." />
@@ -890,7 +1012,7 @@ export default function AgreementsPage() {
       </Dialog>
 
       {/* Schedule Revisit Dialog */}
-      <Dialog open={revisitOpen} onOpenChange={open => { if (!open) { setRevisitOpen(false); } }}>
+      <Dialog open={revisitOpen} onOpenChange={open => { if (!open) setRevisitOpen(false); }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Schedule Revisit</DialogTitle></DialogHeader>
           <div className="space-y-3">
@@ -938,15 +1060,13 @@ export default function AgreementsPage() {
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" onClick={handleScheduleRevisit} disabled={!revisitFeedback || !revisitDate || !revisitRemarks.trim()}>
-              Save
-            </Button>
+            <Button size="sm" onClick={handleScheduleRevisit} disabled={!revisitFeedback || !revisitDate || !revisitRemarks.trim()}>Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Not Interested Dialog */}
-      <Dialog open={dropOpen} onOpenChange={open => { if (!open) { setDropOpen(false); } }}>
+      <Dialog open={dropOpen} onOpenChange={open => { if (!open) setDropOpen(false); }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Not Interested</DialogTitle></DialogHeader>
           <div className="space-y-3">
@@ -976,12 +1096,19 @@ export default function AgreementsPage() {
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" variant="destructive" onClick={handleNotInterested} disabled={!dropReason || !dropRemarks.trim()}>
-              Confirm
-            </Button>
+            <Button size="sm" variant="destructive" onClick={handleNotInterested} disabled={!dropReason || !dropRemarks.trim()}>Confirm</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   );
+}
+
+// Haversine distance in km
+function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }

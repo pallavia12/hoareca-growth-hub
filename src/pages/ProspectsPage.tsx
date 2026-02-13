@@ -200,7 +200,12 @@ export default function ProspectsPage() {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Locality *</Label>
-                    <Input placeholder="Koramangala" value={form.locality} onChange={e => setForm(f => ({ ...f, locality: e.target.value }))} />
+                    <Select value={form.locality} onValueChange={v => setForm(f => ({ ...f, locality: v }))}>
+                      <SelectTrigger><SelectValue placeholder="Select locality" /></SelectTrigger>
+                      <SelectContent>
+                        {localities.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 <div className="space-y-1">
