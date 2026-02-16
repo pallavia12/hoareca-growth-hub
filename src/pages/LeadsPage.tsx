@@ -542,30 +542,31 @@ export default function LeadsPage() {
                 <TableHead className="text-xs">Name</TableHead>
                 <TableHead className="text-xs">Locality</TableHead>
                 <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
+                <TableHead className="text-xs">Attempts</TableHead>
                 <TableHead className="text-xs">Info</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                 ) : droppedProspects.length === 0 ? (
-                  <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No dropped prospects.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No dropped prospects.</TableCell></TableRow>
                 ) : droppedProspects.map(p => {
                   const lead = getLeadForProspect(p.id);
                   const callCount = lead?.call_count || 0;
                   const visitCount = lead?.visit_count || 0;
+                  const totalAttempts = callCount + visitCount;
                   return (
                     <TableRow key={p.id} className="text-sm">
-                      <TableCell className="font-medium max-w-[180px] truncate">
-                        {p.restaurant_name}
-                        {(callCount > 0 || visitCount > 0) && (
-                          <div className="flex gap-1 mt-0.5">
-                            {callCount > 0 && <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/20">{callCount} {callCount === 1 ? "call" : "calls"}</Badge>}
-                            {visitCount > 0 && <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">{visitCount} {visitCount === 1 ? "visit" : "visits"}</Badge>}
-                          </div>
-                        )}
-                      </TableCell>
+                      <TableCell className="font-medium max-w-[180px] truncate">{p.restaurant_name}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
                       <TableCell className="text-xs font-mono hidden sm:table-cell">{p.pincode}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          {callCount > 0 && <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/20">{callCount} {callCount === 1 ? "call" : "calls"}</Badge>}
+                          {visitCount > 0 && <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">{visitCount} {visitCount === 1 ? "visit" : "visits"}</Badge>}
+                          {totalAttempts === 0 && <span className="text-xs text-muted-foreground">—</span>}
+                        </div>
+                      </TableCell>
                       <TableCell><Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">Dropped</Badge></TableCell>
                     </TableRow>
                   );
