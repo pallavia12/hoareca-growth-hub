@@ -10,7 +10,6 @@ import {
   Leaf,
   BookOpen,
   TrendingUp,
-  ChevronRight,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -23,16 +22,10 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubItem,
-  SidebarMenuSubButton,
   SidebarHeader,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
-import {
-  Collapsible, CollapsibleContent, CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -41,12 +34,11 @@ const navItems = [
   { title: "Step 3: Sample Orders", url: "/sample-orders", icon: ShoppingBag, badge: "6" },
   { title: "Step 4: Agreements", url: "/agreements", icon: FileSignature, badge: "3" },
   { title: "Lead Master", url: "/lead-master", icon: BookOpen },
+  { title: "Funnel View", url: "/admin/funnel", icon: TrendingUp },
 ];
 
 const adminItems = [
-  { title: "Admin Dashboard", url: "/admin", icon: BarChart3, children: [
-    { title: "Funnel View", url: "/admin/funnel", icon: TrendingUp },
-  ]},
+  { title: "Admin Dashboard", url: "/admin", icon: BarChart3 },
   { title: "Analytics Dashboard", url: "/config", icon: Settings },
 ];
 
@@ -108,46 +100,16 @@ export function AppSidebar() {
               <SidebarMenu>
                 {adminItems.map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    {item.children ? (
-                      <Collapsible defaultOpen className="group/collapsible">
-                        <CollapsibleTrigger asChild>
-                          <SidebarMenuButton tooltip={item.title} className="hover:bg-sidebar-accent/50">
-                            <item.icon className="w-4 h-4 shrink-0" />
-                            <span className="truncate">{item.title}</span>
-                            <ChevronRight className="ml-auto w-3 h-3 transition-transform group-data-[state=open]/collapsible:rotate-90" />
-                          </SidebarMenuButton>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                          <SidebarMenuSub>
-                            {item.children.map((child) => (
-                              <SidebarMenuSubItem key={child.title}>
-                                <SidebarMenuSubButton asChild>
-                                  <NavLink
-                                    to={child.url}
-                                    className="hover:bg-sidebar-accent/50"
-                                    activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                                  >
-                                    <child.icon className="w-3 h-3 shrink-0" />
-                                    <span className="truncate">{child.title}</span>
-                                  </NavLink>
-                                </SidebarMenuSubButton>
-                              </SidebarMenuSubItem>
-                            ))}
-                          </SidebarMenuSub>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    ) : (
-                      <SidebarMenuButton asChild tooltip={item.title}>
-                        <NavLink
-                          to={item.url}
-                          className="hover:bg-sidebar-accent/50"
-                          activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                        >
-                          <item.icon className="w-4 h-4 shrink-0" />
-                          <span className="truncate">{item.title}</span>
-                        </NavLink>
-                      </SidebarMenuButton>
-                    )}
+                    <SidebarMenuButton asChild tooltip={item.title}>
+                      <NavLink
+                        to={item.url}
+                        className="hover:bg-sidebar-accent/50"
+                        activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                      >
+                        <item.icon className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{item.title}</span>
+                      </NavLink>
+                    </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
               </SidebarMenu>
