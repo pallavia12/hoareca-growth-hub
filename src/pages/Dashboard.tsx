@@ -18,54 +18,11 @@ import {
   MapPin,
   IndianRupee,
 } from "lucide-react";
-import { format, addDays, startOfWeek, endOfWeek, isWithinInterval, isSameDay } from "date-fns";
-import { useState } from "react";
+import { format, addDays, startOfWeek, endOfWeek } from "date-fns";
+import { useState, useEffect, useMemo } from "react";
 import type { DateRange } from "react-day-picker";
-
-const metrics = [
-  { label: "Total Prospects", value: "147", icon: Database, color: "text-primary" },
-  { label: "Leads Generated", value: "68", icon: Users, color: "text-secondary" },
-  { label: "Sample Orders", value: "24", icon: ShoppingBag, color: "text-accent" },
-  { label: "Agreements Signed", value: "12", icon: FileSignature, color: "text-primary" },
-  { label: "Today's Calls", value: "18", icon: PhoneCall, color: "text-info" },
-  { label: "Today's Visits", value: "5", icon: MapPin, color: "text-secondary" },
-  { label: "Conversion Rate", value: "17.6%", icon: TrendingUp, color: "text-primary" },
-  { label: "Pipeline Value", value: "₹4.2L/wk", icon: IndianRupee, color: "text-accent" },
-];
-
-const steps = [
-  { title: "Prospect Building", subtitle: "147 total · 32 available", icon: Database, progress: 22, url: "/prospects" },
-  { title: "Lead Generation", subtitle: "68 leads · 8 re-calls pending", icon: Phone, progress: 46, url: "/leads" },
-  { title: "Visit to Sample Order", subtitle: "24 in pipeline · 3 visits today", icon: ShoppingBag, progress: 35, url: "/sample-orders" },
-  { title: "Sample to Agreement", subtitle: "12 active · 2 follow-ups due", icon: FileSignature, progress: 50, url: "/agreements" },
-];
-
-const dummyAppointments: Record<string, Array<{ time: string; name: string; type: string }>> = {};
-
-const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-for (let i = 0; i < 7; i++) {
-  const day = format(addDays(weekStart, i), "yyyy-MM-dd");
-  if (i === 0) dummyAppointments[day] = [
-    { time: "10:00 AM", name: "The Avocado Café", type: "Call" },
-    { time: "2:00 PM", name: "Green Bowl Kitchen", type: "Visit" },
-  ];
-  if (i === 1) dummyAppointments[day] = [
-    { time: "11:00 AM", name: "Cloud9 Bakes", type: "Visit" },
-    { time: "3:00 PM", name: "Café Azzure", type: "Sample Delivery" },
-    { time: "4:30 PM", name: "The Pasta House", type: "Call" },
-  ];
-  if (i === 2) dummyAppointments[day] = [
-    { time: "9:30 AM", name: "Mango Tree", type: "Agreement" },
-    { time: "1:00 PM", name: "Urban Spice", type: "Visit" },
-  ];
-  if (i === 3) dummyAppointments[day] = [
-    { time: "10:00 AM", name: "Fork & Spoon", type: "Call" },
-  ];
-  if (i === 4) dummyAppointments[day] = [
-    { time: "11:30 AM", name: "Lime & Lemon", type: "Visit" },
-    { time: "3:00 PM", name: "The Kitchen Story", type: "Sample Delivery" },
-  ];
-}
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 const typeColors: Record<string, string> = {
   Call: "bg-blue-100 text-blue-700 border-blue-200",
@@ -76,6 +33,7 @@ const typeColors: Record<string, string> = {
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { user, userRole } = useAuth();
   const today = format(new Date(), "yyyy-MM-dd");
   const [selectedDay, setSelectedDay] = useState(today);
 
@@ -83,10 +41,125 @@ const Dashboard = () => {
   const defaultTo = endOfWeek(new Date(), { weekStartsOn: 1 });
   const [dateRange, setDateRange] = useState<DateRange | undefined>({ from: defaultFrom, to: defaultTo });
 
+  const [userPincodes, setUserPincodes] = useState<string[]>([]);
+  const [prospects, setProspects] = useState<any[]>([]);
+  const [leads, setLeads] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [agreements, setAgreements] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch user's assigned pincodes
+  useEffect(() => {
+    if (!user) return;
+    const fetchPincodes = async () => {
+      const { data: profile } = await supabase.from("profiles").select("email").eq("user_id", user.id).maybeSingle();
+      if (!profile?.email) return;
+
+      if (userRole === "admin") {
+        // Admin sees everything
+        setUserPincodes([]);
+      } else {
+        const { data } = await supabase.from("pincode_persona_map").select("pincode").eq("user_email", profile.email);
+        setUserPincodes(data?.map((d) => d.pincode) || []);
+      }
+    };
+    fetchPincodes();
+  }, [user, userRole]);
+
+  // Fetch all pipeline data
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      const isAdmin = userRole === "admin";
+      const pincodes = userPincodes;
+
+      // Prospects
+      let pQuery = supabase.from("prospects").select("*");
+      if (!isAdmin && pincodes.length > 0) pQuery = pQuery.in("pincode", pincodes);
+      const { data: pData } = await pQuery;
+      setProspects(pData || []);
+
+      // Leads
+      let lQuery = supabase.from("leads").select("*");
+      if (!isAdmin && pincodes.length > 0) lQuery = lQuery.in("pincode", pincodes);
+      const { data: lData } = await lQuery;
+      setLeads(lData || []);
+
+      // Sample Orders (join via lead_id)
+      const { data: oData } = await supabase.from("sample_orders").select("*, leads!inner(pincode)");
+      let filteredOrders = oData || [];
+      if (!isAdmin && pincodes.length > 0) {
+        filteredOrders = filteredOrders.filter((o: any) => pincodes.includes(o.leads?.pincode));
+      }
+      setOrders(filteredOrders);
+
+      // Agreements (join via sample_order -> lead)
+      const { data: aData } = await supabase.from("agreements").select("*, sample_orders!inner(lead_id, leads!inner(pincode))");
+      let filteredAgreements = aData || [];
+      if (!isAdmin && pincodes.length > 0) {
+        filteredAgreements = filteredAgreements.filter((a: any) => pincodes.includes(a.sample_orders?.leads?.pincode));
+      }
+      setAgreements(filteredAgreements);
+
+      // Appointments for the user
+      const { data: profile } = await supabase.from("profiles").select("email").eq("user_id", user?.id || "").maybeSingle();
+      if (profile?.email) {
+        const { data: apptData } = await supabase.from("appointments").select("*").eq("assigned_to", profile.email).order("scheduled_date");
+        setAppointments(apptData || []);
+      }
+
+      setLoading(false);
+    };
+
+    if (userRole === "admin" || userPincodes.length > 0) {
+      fetchData();
+    } else if (userRole && userPincodes.length === 0) {
+      // Non-admin with no pincodes assigned — show empty
+      setLoading(false);
+    }
+  }, [user, userRole, userPincodes]);
+
+  const metrics = useMemo(() => {
+    const signedCount = agreements.filter((a) => a.status === "signed").length;
+    const todayStr = format(new Date(), "yyyy-MM-dd");
+    const todayCalls = leads.filter((l) => l.last_activity_date && format(new Date(l.last_activity_date), "yyyy-MM-dd") === todayStr).length;
+    const todayVisits = orders.filter((o) => o.visit_date === todayStr).length;
+    const conversionRate = prospects.length > 0 ? ((signedCount / prospects.length) * 100).toFixed(1) : "0";
+    const weeklyVolume = agreements.reduce((sum, a) => sum + (a.expected_weekly_volume_kg || 0), 0);
+
+    return [
+      { label: "Total Prospects", value: String(prospects.length), icon: Database, color: "text-primary" },
+      { label: "Leads Generated", value: String(leads.length), icon: Users, color: "text-secondary" },
+      { label: "Sample Orders", value: String(orders.length), icon: ShoppingBag, color: "text-accent" },
+      { label: "Agreements Signed", value: String(signedCount), icon: FileSignature, color: "text-primary" },
+      { label: "Today's Calls", value: String(todayCalls), icon: PhoneCall, color: "text-info" },
+      { label: "Today's Visits", value: String(todayVisits), icon: MapPin, color: "text-secondary" },
+      { label: "Conversion Rate", value: `${conversionRate}%`, icon: TrendingUp, color: "text-primary" },
+      { label: "Pipeline Value", value: weeklyVolume > 0 ? `₹${(weeklyVolume * 140 / 1000).toFixed(1)}L/wk` : "₹0", icon: IndianRupee, color: "text-accent" },
+    ];
+  }, [prospects, leads, orders, agreements]);
+
+  const steps = useMemo(() => {
+    const availableProspects = prospects.filter((p) => p.status === "available").length;
+    const recallLeads = leads.filter((l) => l.status === "recall").length;
+    const todayVisits = orders.filter((o) => o.visit_date === format(new Date(), "yyyy-MM-dd")).length;
+    const activeAgreements = agreements.filter((a) => ["agreement_sent", "signed"].includes(a.status)).length;
+
+    const p2l = prospects.length > 0 ? Math.round((leads.length / prospects.length) * 100) : 0;
+    const l2o = leads.length > 0 ? Math.round((orders.length / leads.length) * 100) : 0;
+    const o2a = orders.length > 0 ? Math.round((agreements.filter((a) => a.status === "signed").length / orders.length) * 100) : 0;
+
+    return [
+      { title: "Prospect Building", subtitle: `${prospects.length} total · ${availableProspects} available`, icon: Database, progress: p2l, url: "/prospects" },
+      { title: "Lead Generation", subtitle: `${leads.length} leads · ${recallLeads} re-calls pending`, icon: Phone, progress: l2o, url: "/leads" },
+      { title: "Visit to Sample Order", subtitle: `${orders.length} in pipeline · ${todayVisits} visits today`, icon: ShoppingBag, progress: l2o, url: "/sample-orders" },
+      { title: "Sample to Agreement", subtitle: `${activeAgreements} active · ${agreements.filter((a) => a.status === "revisit_needed").length} follow-ups due`, icon: FileSignature, progress: o2a, url: "/agreements" },
+    ];
+  }, [prospects, leads, orders, agreements]);
+
   const rangeStart = dateRange?.from || defaultFrom;
   const rangeEnd = dateRange?.to || dateRange?.from || defaultTo;
-
-  // Generate days for the selected range
   const rangeDays: Date[] = [];
   let cursor = new Date(rangeStart);
   while (cursor <= rangeEnd) {
@@ -94,13 +167,16 @@ const Dashboard = () => {
     cursor = addDays(cursor, 1);
   }
 
-  const appointments = dummyAppointments[selectedDay] || [];
+  const dayAppointments = appointments.filter((a) => a.scheduled_date === selectedDay);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground text-sm">Welcome back! Here's your pipeline overview.</p>
+        <p className="text-muted-foreground text-sm">
+          Welcome back! Here's your pipeline overview.
+          {userRole && <Badge variant="outline" className="ml-2 text-xs">{userRole.replace("_", " ").toUpperCase()}</Badge>}
+        </p>
       </div>
 
       {/* Calendar Strip */}
@@ -142,7 +218,7 @@ const Dashboard = () => {
               const dateStr = format(date, "yyyy-MM-dd");
               const isToday = dateStr === today;
               const isSelected = dateStr === selectedDay;
-              const dayAppts = dummyAppointments[dateStr] || [];
+              const dayAppts = appointments.filter((a) => a.scheduled_date === dateStr);
               return (
                 <button
                   key={i}
@@ -163,13 +239,13 @@ const Dashboard = () => {
               );
             })}
           </div>
-          {appointments.length > 0 ? (
+          {dayAppointments.length > 0 ? (
             <div className="mt-3 space-y-2">
-              {appointments.map((a, idx) => (
+              {dayAppointments.map((a, idx) => (
                 <div key={idx} className="flex items-center gap-3 text-sm p-2 rounded-md bg-muted/50">
-                  <span className="font-mono text-xs text-muted-foreground w-16">{a.time}</span>
-                  <span className="font-medium flex-1">{a.name}</span>
-                  <Badge variant="outline" className={`text-xs ${typeColors[a.type] || ""}`}>{a.type}</Badge>
+                  <span className="font-mono text-xs text-muted-foreground w-16">{a.scheduled_time || "—"}</span>
+                  <span className="font-medium flex-1">{a.restaurant_name}</span>
+                  <Badge variant="outline" className={`text-xs ${typeColors[a.appointment_type] || ""}`}>{a.appointment_type}</Badge>
                 </div>
               ))}
             </div>
@@ -187,7 +263,7 @@ const Dashboard = () => {
               <div className="flex items-center justify-between">
                 <m.icon className={`w-5 h-5 ${m.color} opacity-70`} />
               </div>
-              <p className="text-2xl font-bold mt-2">{m.value}</p>
+              <p className="text-2xl font-bold mt-2">{loading ? "…" : m.value}</p>
               <p className="text-xs text-muted-foreground">{m.label}</p>
             </CardContent>
           </Card>
