@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,7 @@ import { useLeads } from "@/hooks/useLeads";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  Plus, Search, Upload, Users,
+  Plus, Search, Upload, Users, Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -39,8 +39,13 @@ const tagOptions = ["New", "In Progress", "Qualified", "Rescheduled", "Dropped"]
 const cuisineTypes = ["Indian", "Continental", "Pan-Asian", "Cafe", "Cloud Kitchen", "Multi-cuisine"];
 const sourceTypes = ["Google Maps", "Swiggy", "Zomato", "Event", "Referral", "Field"];
 
+// CSV schema: column names must match exactly. Required: pincode, locality, restaurant_name
+const CSV_REQUIRED_COLUMNS = ["pincode", "locality", "restaurant_name"];
+const CSV_OPTIONAL_COLUMNS = ["location", "source", "cuisine_type", "tag", "recall_date"];
+const CSV_ALL_COLUMNS = [...CSV_REQUIRED_COLUMNS, ...CSV_OPTIONAL_COLUMNS];
+
 export default function ProspectsPage() {
-  const { prospects, loading, addProspect, updateProspect, filterProspects, refetch } = useProspects();
+  const { prospects, loading, addProspect, addProspectsBulk, updateProspect, filterProspects, refetch } = useProspects();
   const { leads } = useLeads();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -68,6 +73,84 @@ export default function ProspectsPage() {
     pincode: "", locality: "", restaurant_name: "", location: "",
     source: "", cuisine_type: "",
   });
+
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [csvUploading, setCsvUploading] = useState(false);
+
+  const downloadCsvTemplate = () => {
+    const header = CSV_ALL_COLUMNS.join(",");
+    const example = "560034,Koramangala,The Avocado Café,100ft Road Koramangala,Google Maps,Cafe,New,";
+    const csv = `${header}\n${example}`;
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "prospects-template.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast({ title: "Template downloaded" });
+  };
+
+  const parseAndValidateCsv = (text: string): { valid: Record<string, unknown>[]; errors: string[] } => {
+    const lines = text.trim().split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) return { valid: [], errors: ["CSV must have a header row and at least one data row"] };
+    const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
+    const missing = CSV_REQUIRED_COLUMNS.filter(c => !headers.includes(c));
+    if (missing.length > 0) {
+      return { valid: [], errors: [`Missing required columns: ${missing.join(", ")}. Expected: ${CSV_REQUIRED_COLUMNS.join(", ")}`] };
+    }
+    const valid: Record<string, unknown>[] = [];
+    const errors: string[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(",").map(v => v.trim());
+      const row: Record<string, unknown> = {};
+      headers.forEach((h, j) => { row[h] = values[j] ?? ""; });
+      const pincode = String(row.pincode || "").trim();
+      const locality = String(row.locality || "").trim();
+      const restaurant_name = String(row.restaurant_name || "").trim();
+      if (!pincode || !locality || !restaurant_name) {
+        errors.push(`Row ${i + 1}: pincode, locality, and restaurant_name are required`);
+        continue;
+      }
+      valid.push({
+        pincode,
+        locality,
+        restaurant_name,
+        location: (row.location as string)?.trim() || null,
+        source: (row.source as string)?.trim() && sourceTypes.includes((row.source as string).trim()) ? (row.source as string).trim() : null,
+        cuisine_type: (row.cuisine_type as string)?.trim() && cuisineTypes.includes((row.cuisine_type as string).trim()) ? (row.cuisine_type as string).trim() : null,
+        tag: (row.tag as string)?.trim() && tagOptions.includes((row.tag as string).trim()) ? (row.tag as string).trim() : "New",
+        recall_date: (row.recall_date as string)?.trim() || null,
+      });
+    }
+    return { valid, errors };
+  };
+
+  const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setCsvUploading(true);
+    try {
+      const text = await file.text();
+      const { valid, errors } = parseAndValidateCsv(text);
+      if (valid.length === 0) {
+        toast({ title: "No valid rows", description: errors[0] || "Check CSV format", variant: "destructive" });
+        return;
+      }
+      const toInsert = valid.map(row => ({
+        ...row,
+        created_by: user?.email || null,
+        status: "available",
+      }));
+      const { success, failed } = await addProspectsBulk(toInsert as Parameters<typeof addProspectsBulk>[0]);
+      if (failed > 0) toast({ title: `${failed} row(s) failed`, variant: "destructive" });
+      if (errors.length > 0) toast({ title: "Some rows skipped", description: errors.slice(0, 3).join("; "), variant: "default" });
+    } catch (err) {
+      toast({ title: "Error reading file", description: String(err), variant: "destructive" });
+    } finally {
+      setCsvUploading(false);
+    }
+  };
 
   const localities = useMemo(() => [...new Set(prospects.map(p => p.locality))].filter(Boolean).sort(), [prospects]);
 
@@ -237,7 +320,24 @@ export default function ProspectsPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Button variant="outline" size="sm"><Upload className="w-4 h-4 mr-1" /> CSV Upload</Button>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={handleCsvUpload}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={csvUploading}
+            onClick={() => csvInputRef.current?.click()}
+          >
+            <Upload className="w-4 h-4 mr-1" /> {csvUploading ? "Uploading..." : "CSV Upload"}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={downloadCsvTemplate} title="Download CSV template with schema">
+            <Download className="w-4 h-4 mr-1" /> Template
+          </Button>
         </div>
       </div>
 

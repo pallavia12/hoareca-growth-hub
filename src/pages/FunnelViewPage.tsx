@@ -53,7 +53,7 @@ export default function FunnelViewPage() {
           l.notes?.toLowerCase().includes(r.reason_text.toLowerCase())
         ).length;
         // If no matches found, assign a simulated count based on step
-        return { ...r, count: count || Math.floor(Math.random() * 5) + 1 };
+        return { ...r, count: count || 0 };
       });
       setDropReasons(reasonList);
     });

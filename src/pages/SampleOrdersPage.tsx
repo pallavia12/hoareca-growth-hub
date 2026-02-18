@@ -58,7 +58,7 @@ export default function SampleOrdersPage() {
     supabase.from("sku_mapping").select("box_count").order("box_count")
       .then(({ data }) => {
         const counts = [...new Set((data || []).map(d => d.box_count).filter(Boolean))].map(String);
-        setCountOptions(counts.length > 0 ? counts : ["16", "18", "20"]);
+        setCountOptions(counts.length > 0 ? counts : []);
       });
     supabase.from("stage_mapping").select("stage_description").order("stage_number")
       .then(({ data }) => setRipenessOptions(data?.map(d => d.stage_description) || []));

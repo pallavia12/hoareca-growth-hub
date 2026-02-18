@@ -21,7 +21,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { useAgreements, useDistributionPartners } from "@/hooks/useAgreements";
+import { useAgreements, useDistributionPartners, useDeliverySlots } from "@/hooks/useAgreements";
 import { supabase } from "@/integrations/supabase/client";
 import { useSampleOrders } from "@/hooks/useSampleOrders";
 import { useLeads } from "@/hooks/useLeads";
@@ -59,6 +59,7 @@ export default function AgreementsPage() {
   const { orders, updateOrder } = useSampleOrders();
   const { leads, updateLead } = useLeads();
   const partners = useDistributionPartners();
+  const deliverySlots = useDeliverySlots();
   const { toast } = useToast();
 
   // Fetch drop reasons and SKU options from DB
@@ -920,16 +921,15 @@ export default function AgreementsPage() {
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Delivery Slot *</Label>
-                <RadioGroup value={deliverySlot} onValueChange={setDeliverySlot} className="flex gap-4">
-                  <div className="flex items-center gap-1.5">
-                    <RadioGroupItem value="9am-12pm" id="slot-am" />
-                    <Label htmlFor="slot-am" className="text-xs cursor-pointer">9 AM–12 PM</Label>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <RadioGroupItem value="12pm-3pm" id="slot-pm" />
-                    <Label htmlFor="slot-pm" className="text-xs cursor-pointer">12 PM–3 PM</Label>
-                  </div>
+                <RadioGroup value={deliverySlot} onValueChange={setDeliverySlot} className="flex flex-wrap gap-4">
+                  {deliverySlots.map((slot) => (
+                    <div key={slot.id} className="flex items-center gap-1.5">
+                      <RadioGroupItem value={slot.slot_name} id={`slot-${slot.id}`} />
+                      <Label htmlFor={`slot-${slot.id}`} className="text-xs cursor-pointer">{slot.slot_name}</Label>
+                    </div>
+                  ))}
                 </RadioGroup>
+                {deliverySlots.length === 0 && <p className="text-xs text-muted-foreground">No delivery slots configured. Add in Admin.</p>}
                 <FieldError msg={errors.deliverySlot} />
               </div>
               <div className="space-y-1">

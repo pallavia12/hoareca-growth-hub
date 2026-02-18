@@ -27,16 +27,29 @@ import {
 } from "lucide-react";
 import type { Tables as TablesType } from "@/integrations/supabase/types";
 
-const metrics = [
-  { label: "Total Prospects", value: "147", icon: Database, color: "text-primary" },
-  { label: "Leads Generated", value: "68", icon: Users, color: "text-secondary" },
-  { label: "Sample Orders", value: "24", icon: ShoppingBag, color: "text-accent" },
-  { label: "Agreements Signed", value: "12", icon: FileSignature, color: "text-primary" },
-  { label: "Today's Calls", value: "18", icon: PhoneCall, color: "text-info" },
-  { label: "Today's Visits", value: "5", icon: MapPin, color: "text-secondary" },
-  { label: "Conversion Rate", value: "17.6%", icon: TrendingUp, color: "text-primary" },
-  { label: "Pipeline Value", value: "₹4.2L/wk", icon: IndianRupee, color: "text-accent" },
+const METRIC_CONFIG = [
+  { label: "Total Prospects", key: "prospects", icon: Database, color: "text-primary" },
+  { label: "Leads Generated", key: "leads", icon: Users, color: "text-secondary" },
+  { label: "Sample Orders", key: "orders", icon: ShoppingBag, color: "text-accent" },
+  { label: "Agreements Signed", key: "agreements", icon: FileSignature, color: "text-primary" },
+  { label: "Today's Calls", key: "todayCalls", icon: PhoneCall, color: "text-info" },
+  { label: "Today's Visits", key: "todayVisits", icon: MapPin, color: "text-secondary" },
+  { label: "Conversion Rate", key: "conversionRate", icon: TrendingUp, color: "text-primary" },
+  { label: "Pipeline Value", key: "pipelineValue", icon: IndianRupee, color: "text-accent" },
 ];
+
+// Default coords for localities; extended dynamically from pincode_persona_map localities
+const DEFAULT_LOCALITY_COORDS: Record<string, { x: number; y: number; w: number; h: number; color: string }> = {
+  "Koramangala": { x: 40, y: 48, w: 18, h: 14, color: "#4F46E5" },
+  "Indiranagar": { x: 48, y: 30, w: 16, h: 12, color: "#059669" },
+  "Whitefield": { x: 68, y: 26, w: 20, h: 14, color: "#D97706" },
+  "Jayanagar": { x: 28, y: 58, w: 18, h: 14, color: "#DC2626" },
+  "MG Road": { x: 42, y: 34, w: 14, h: 10, color: "#7C3AED" },
+  "HSR Layout": { x: 44, y: 62, w: 18, h: 14, color: "#0891B2" },
+  "Marathahalli": { x: 60, y: 34, w: 16, h: 14, color: "#EA580C" },
+  "Basavanagudi": { x: 24, y: 48, w: 16, h: 14, color: "#BE185D" },
+};
+const FALLBACK_COLORS = ["#4F46E5", "#059669", "#D97706", "#DC2626", "#7C3AED", "#0891B2", "#EA580C", "#BE185D"];
 
 type PincodeMap = TablesType<"pincode_persona_map">;
 type SkuMapping = TablesType<"sku_mapping">;
@@ -56,21 +69,14 @@ const roleLabels: Record<string, string> = {
   admin: "Admin",
 };
 
-// Bangalore locality coordinates with rectangular boundaries
-const localityCoords: Record<string, { x: number; y: number; w: number; h: number; color: string }> = {
-  "Koramangala": { x: 40, y: 48, w: 18, h: 14, color: "#4F46E5" },
-  "Indiranagar": { x: 48, y: 30, w: 16, h: 12, color: "#059669" },
-  "Whitefield": { x: 68, y: 26, w: 20, h: 14, color: "#D97706" },
-  "Jayanagar": { x: 28, y: 58, w: 18, h: 14, color: "#DC2626" },
-  "MG Road": { x: 42, y: 34, w: 14, h: 10, color: "#7C3AED" },
-  "HSR Layout": { x: 44, y: 62, w: 18, h: 14, color: "#0891B2" },
-  "Marathahalli": { x: 60, y: 34, w: 16, h: 14, color: "#EA580C" },
-  "Basavanagudi": { x: 24, y: 48, w: 16, h: 14, color: "#BE185D" },
-};
 
 export default function AdminDashboardPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("pincode");
+  const [metrics, setMetrics] = useState<Record<string, string>>({
+    prospects: "—", leads: "—", orders: "—", agreements: "—",
+    todayCalls: "—", todayVisits: "—", conversionRate: "—", pipelineValue: "—",
+  });
 
   // --- Pincode Mapping State ---
   const [pincodeData, setPincodeData] = useState<PincodeMap[]>([]);
@@ -107,6 +113,39 @@ export default function AdminDashboardPage() {
     fetchPincodeData();
     fetchSkuData();
     fetchStageData();
+  }, []);
+
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const [pRes, lRes, oData, aData, logsRes] = await Promise.all([
+        supabase.from("prospects").select("id", { count: "exact", head: true }),
+        supabase.from("leads").select("id", { count: "exact", head: true }),
+        supabase.from("sample_orders").select("id"),
+        supabase.from("agreements").select("id, status"),
+        supabase.from("activity_logs").select("action, timestamp, notes").gte("timestamp", `${today}T00:00:00`),
+      ]);
+      const pCount = pRes.count ?? 0;
+      const lCount = lRes.count ?? 0;
+      const oCount = oData?.length ?? 0;
+      const signedCount = (aData || []).filter((a: { status: string }) => a.status === "signed").length;
+      const logs = logsRes.data || [];
+      const todayCalls = logs.filter((l: { action: string }) => /call|dial|contact/i.test(l.action || "")).length;
+      const todayVisits = logs.filter((l: { action: string }) => /visit|meet|sample/i.test(l.action || "")).length;
+      const convRate = lCount > 0 ? ((signedCount / lCount) * 100).toFixed(1) : "0";
+      const pipelineValue = "—";
+      setMetrics({
+        prospects: String(pCount),
+        leads: String(lCount),
+        orders: String(oCount),
+        agreements: String(signedCount),
+        todayCalls: String(todayCalls),
+        todayVisits: String(todayVisits),
+        conversionRate: `${convRate}%`,
+        pipelineValue,
+      });
+    };
+    fetchMetrics();
   }, []);
 
   const fetchPincodeData = async () => {
@@ -148,6 +187,24 @@ export default function AdminDashboardPage() {
   }, [pincodeGroups, pincodeSearch]);
 
   const selectedPincodeData = selectedPincode ? pincodeGroups[selectedPincode] : null;
+
+  const localityCoords = useMemo(() => {
+    const localities = [...new Set(Object.values(pincodeGroups).map(g => g.locality))];
+    const coords: Record<string, { x: number; y: number; w: number; h: number; color: string }> = {};
+    localities.forEach((loc, i) => {
+      if (DEFAULT_LOCALITY_COORDS[loc]) {
+        coords[loc] = DEFAULT_LOCALITY_COORDS[loc];
+      } else {
+        const row = Math.floor(i / 4);
+        const col = i % 4;
+        coords[loc] = {
+          x: 10 + col * 22, y: 15 + row * 25, w: 18, h: 12,
+          color: FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+        };
+      }
+    });
+    return coords;
+  }, [pincodeGroups]);
 
   const openPincodeDialog = (pincode: string) => {
     setSelectedPincode(pincode);
@@ -274,13 +331,13 @@ export default function AdminDashboardPage() {
 
       {/* Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {metrics.map((m) => (
+        {METRIC_CONFIG.map((m) => (
           <Card key={m.label} className="hover:shadow-md transition-shadow cursor-pointer">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <m.icon className={`w-5 h-5 ${m.color} opacity-70`} />
               </div>
-              <p className="text-2xl font-bold mt-2">{m.value}</p>
+              <p className="text-2xl font-bold mt-2">{metrics[m.key] ?? "—"}</p>
               <p className="text-xs text-muted-foreground">{m.label}</p>
             </CardContent>
           </Card>

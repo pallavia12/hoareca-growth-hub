@@ -10,7 +10,11 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "export-prospects": "node scripts/export-prospects.mjs",
+    "transform-leads": "node scripts/transform-leads-csv.mjs",
+    "import-leads": "node scripts/import-leads.mjs",
+    "generate-leads-sql": "node scripts/generate-leads-sql.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

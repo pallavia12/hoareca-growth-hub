@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useLeads } from "@/hooks/useLeads";
 import { useProspects } from "@/hooks/useProspects";
+import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -44,9 +45,10 @@ export default function LeadsPage() {
   const { user, userRole } = useAuth();
   const { toast } = useToast();
 
-  const [tab, setTab] = useState<"available" | "revisit" | "dropouts">("available");
+  const [tab, setTab] = useState<"available" | "revisit" | "dropouts" | "leads">("available");
   const [search, setSearch] = useState("");
   const [filterLocality, setFilterLocality] = useState("");
+  const [userPincodes, setUserPincodes] = useState<string[]>([]);
 
   const [createLeadOpen, setCreateLeadOpen] = useState(false);
   const [createLeadProspectId, setCreateLeadProspectId] = useState<string | null>(null);
@@ -55,6 +57,27 @@ export default function LeadsPage() {
   const [unsuccessfulProspectId, setUnsuccessfulProspectId] = useState<string | null>(null);
   const [unsuccessfulReason, setUnsuccessfulReason] = useState("");
   const [unsuccessfulRemarks, setUnsuccessfulRemarks] = useState("");
+  const [unsuccessfulReasons, setUnsuccessfulReasons] = useState<string[]>([]);
+
+  useEffect(() => {
+    supabase.from("drop_reasons").select("reason_text").in("step_number", [1, 2]).eq("is_active", true)
+      .then(({ data }) => setUnsuccessfulReasons(data?.map(d => d.reason_text) || []));
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchPincodes = async () => {
+      const { data: profile } = await supabase.from("profiles").select("email").eq("user_id", user.id).maybeSingle();
+      if (!profile?.email) return;
+      if (userRole === "admin") {
+        setUserPincodes([]);
+      } else {
+        const { data } = await supabase.from("pincode_persona_map").select("pincode").eq("user_email", profile.email);
+        setUserPincodes(data?.map((d) => d.pincode) || []);
+      }
+    };
+    fetchPincodes();
+  }, [user, userRole]);
 
   const [incompleteOpen, setIncompleteOpen] = useState(false);
   const [revisitDate, setRevisitDate] = useState<Date | undefined>();
@@ -95,8 +118,11 @@ export default function LeadsPage() {
   };
 
   const myProspects = useMemo(() => {
+    if (userRole === "admin") {
+      return prospects.filter(p => p.status === "assigned");
+    }
     return prospects.filter(p => p.mapped_to === user?.email && p.status === "assigned");
-  }, [prospects, user]);
+  }, [prospects, user, userRole]);
 
   const availableProspects = useMemo(() => {
     let list = myProspects.filter(p => !p.tag || p.tag === "New");
@@ -128,13 +154,35 @@ export default function LeadsPage() {
     return list;
   }, [myProspects, search, filterLocality]);
 
-  const localities = useMemo(() => [...new Set(myProspects.map(p => p.locality))].filter(Boolean).sort(), [myProspects]);
+  const localities = useMemo(() => {
+    const fromProspects = myProspects.map(p => p.locality);
+    const fromLeads = leads.map(l => l.locality);
+    return [...new Set([...fromProspects, ...fromLeads])].filter(Boolean).sort();
+  }, [myProspects, leads]);
+
+  const filteredLeads = useMemo(() => {
+    let list = leads;
+    if (userRole !== "admin" && userPincodes.length > 0) {
+      list = list.filter(l => userPincodes.includes(l.pincode));
+    }
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter(l =>
+        l.client_name.toLowerCase().includes(s) ||
+        (l.locality || "").toLowerCase().includes(s) ||
+        l.pincode.includes(s)
+      );
+    }
+    if (filterLocality && filterLocality !== "all") list = list.filter(l => l.locality === filterLocality);
+    return list;
+  }, [leads, userRole, userPincodes, search, filterLocality]);
 
   const counts = useMemo(() => ({
     available: myProspects.filter(p => !p.tag || p.tag === "New").length,
     revisit: myProspects.filter(p => p.tag === "In Progress" || p.tag === "Rescheduled").length,
     dropouts: myProspects.filter(p => p.tag === "Dropped").length,
-  }), [myProspects]);
+    leads: filteredLeads.length,
+  }), [myProspects, filteredLeads]);
 
   const getLeadForProspect = (prospectId: string) => {
     return leads.find(l => l.prospect_id === prospectId);
@@ -465,16 +513,19 @@ export default function LeadsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-foreground">Step 2: Lead Generation</h1>
-          <p className="text-sm text-muted-foreground">{myProspects.length} assigned prospects</p>
+          <p className="text-sm text-muted-foreground">
+            {userRole === "admin" ? "All" : ""} {myProspects.length} assigned prospects · {filteredLeads.length} leads
+          </p>
         </div>
         <Button size="sm" onClick={openAddNewLead}><Plus className="w-4 h-4 mr-1" /> Add New Lead</Button>
       </div>
 
       <Tabs value={tab} onValueChange={v => setTab(v as any)}>
-        <TabsList className="w-full sm:w-auto">
+        <TabsList className="w-full sm:w-auto flex-wrap h-auto gap-1">
           <TabsTrigger value="available" className="text-xs">Available Prospects ({counts.available})</TabsTrigger>
           <TabsTrigger value="revisit" className="text-xs">Revisit ({counts.revisit})</TabsTrigger>
           <TabsTrigger value="dropouts" className="text-xs">Drop-outs ({counts.dropouts})</TabsTrigger>
+          <TabsTrigger value="leads" className="text-xs">All Leads ({counts.leads})</TabsTrigger>
         </TabsList>
 
         <div className="flex flex-col sm:flex-row gap-2 mt-3">
@@ -575,6 +626,42 @@ export default function LeadsPage() {
             </Table>
           </div></CardContent></Card>
         </TabsContent>
+
+        {/* All Leads */}
+        <TabsContent value="leads" className="mt-3">
+          <Card><CardContent className="p-0"><div className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead className="text-xs">Name</TableHead>
+                <TableHead className="text-xs">Locality</TableHead>
+                <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
+                <TableHead className="text-xs">Created By</TableHead>
+                <TableHead className="text-xs">Visits</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                ) : filteredLeads.length === 0 ? (
+                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No leads found.</TableCell></TableRow>
+                ) : filteredLeads.map(l => (
+                  <TableRow key={l.id} className="text-sm">
+                    <TableCell className="font-medium max-w-[180px] truncate">{l.client_name}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{l.locality || "—"}</TableCell>
+                    <TableCell className="text-xs font-mono hidden sm:table-cell">{l.pincode}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{l.created_by || "—"}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {(l.visit_count || 0) > 0 && <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">{l.visit_count} visit{(l.visit_count || 0) === 1 ? "" : "s"}</Badge>}
+                        {(l.call_count || 0) > 0 && <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/20">{l.call_count} call{(l.call_count || 0) === 1 ? "" : "s"}</Badge>}
+                        {((l.visit_count || 0) + (l.call_count || 0)) === 0 && <span className="text-xs text-muted-foreground">—</span>}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div></CardContent></Card>
+        </TabsContent>
       </Tabs>
 
       {/* Create Lead Dialog */}
@@ -639,11 +726,14 @@ export default function LeadsPage() {
             <div className="space-y-1">
               <Label className="text-xs">Reason *</Label>
               <RadioGroup value={unsuccessfulReason} onValueChange={setUnsuccessfulReason} className="space-y-2">
-                <div className="flex items-center space-x-2"><RadioGroupItem value="Not Connected" id="reason-1" /><Label htmlFor="reason-1" className="text-sm cursor-pointer">Not Connected</Label></div>
-                <div className="flex items-center space-x-2"><RadioGroupItem value="Connected - Call Later" id="reason-2" /><Label htmlFor="reason-2" className="text-sm cursor-pointer">Connected - Call Later</Label></div>
-                <div className="flex items-center space-x-2"><RadioGroupItem value="Connected - Not Interested" id="reason-3" /><Label htmlFor="reason-3" className="text-sm cursor-pointer">Connected - Not Interested</Label></div>
-                <div className="flex items-center space-x-2"><RadioGroupItem value="Drop" id="reason-4" /><Label htmlFor="reason-4" className="text-sm cursor-pointer">Drop</Label></div>
+                {unsuccessfulReasons.map((reason, i) => (
+                  <div key={reason} className="flex items-center space-x-2">
+                    <RadioGroupItem value={reason} id={`reason-${i}`} />
+                    <Label htmlFor={`reason-${i}`} className="text-sm cursor-pointer">{reason}</Label>
+                  </div>
+                ))}
               </RadioGroup>
+              {unsuccessfulReasons.length === 0 && <p className="text-xs text-muted-foreground">No reasons configured. Add step 1 or 2 reasons in Admin → Drop Reasons.</p>}
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Remarks *</Label>

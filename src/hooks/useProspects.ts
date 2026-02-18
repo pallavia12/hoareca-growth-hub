@@ -25,7 +25,8 @@ export function useProspects() {
       const { data, error } = await supabase
         .from("prospects")
         .select("*")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .range(0, 9999);
       if (error) {
         console.error("Error fetching prospects:", error.message);
       } else {
@@ -49,6 +50,18 @@ export function useProspects() {
     toast({ title: "Prospect added successfully" });
     fetchProspects();
     return true;
+  };
+
+  const addProspectsBulk = async (prospectsToAdd: ProspectInsert[]) => {
+    if (prospectsToAdd.length === 0) return { success: 0, failed: 0 };
+    const { error } = await supabase.from("prospects").insert(prospectsToAdd);
+    if (error) {
+      toast({ title: "Error adding prospects", description: error.message, variant: "destructive" });
+      return { success: 0, failed: prospectsToAdd.length };
+    }
+    toast({ title: `${prospectsToAdd.length} prospect(s) added successfully` });
+    fetchProspects();
+    return { success: prospectsToAdd.length, failed: 0 };
   };
 
   const updateProspect = async (id: string, updates: Partial<Prospect>) => {
@@ -96,5 +109,5 @@ export function useProspects() {
     });
   };
 
-  return { prospects, loading, addProspect, updateProspect, updateProspectStatus, filterProspects, refetch: fetchProspects };
+  return { prospects, loading, addProspect, addProspectsBulk, updateProspect, updateProspectStatus, filterProspects, refetch: fetchProspects };
 }
