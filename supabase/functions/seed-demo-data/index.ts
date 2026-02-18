@@ -19,10 +19,17 @@ serve(async (req) => {
     });
 
     const demoUsers = [
-      { email: "agent@ninjacart.com", password: "demo123456", full_name: "Rahul Sharma", role: "calling_agent" },
-      { email: "leadtaker@ninjacart.com", password: "demo123456", full_name: "Priya Patel", role: "lead_taker" },
-      { email: "kam@ninjacart.com", password: "demo123456", full_name: "Vikram Singh", role: "kam" },
-      { email: "admin@ninjacart.com", password: "demo123456", full_name: "Anita Desai", role: "admin" },
+      { email: "likhitha@ninjacart.com", password: "123456", full_name: "Likhitha", role: "kam" },
+      { email: "tanmoy@ninjacart.com", password: "123456", full_name: "Tanmoy", role: "kam" },
+      { email: "sonu@ninjacart.com", password: "123456", full_name: "Sonu", role: "kam" },
+      { email: "srihari@ninjacart.com", password: "123456", full_name: "Srihari", role: "kam" },
+      { email: "stalin@ninjacart.com", password: "123456", full_name: "Stalin", role: "calling_agent" },
+      { email: "yashaswini@ninjacart.com", password: "123456", full_name: "Yashaswini", role: "calling_agent" },
+      { email: "rkgnanajyothi@ninjacart.com", password: "123456", full_name: "R K Gnana Jyothi", role: "calling_agent" },
+      { email: "mbanu@ninjacart.com", password: "123456", full_name: "M Banu", role: "calling_agent" },
+      { email: "anushan@ninjacart.com", password: "123456", full_name: "Anusha N", role: "calling_agent" },
+      { email: "preethi@ninjacart.com", password: "123456", full_name: "Preethi", role: "lead_taker" },
+      { email: "admin123@ninjacart.com", password: "123456", full_name: "Admin123", role: "admin" },
     ];
 
     const results = [];
@@ -62,21 +69,20 @@ serve(async (req) => {
     // Seed pincode mappings
     await supabase.from("pincode_persona_map").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     const pincodeMap = [
-      { pincode: "560034", locality: "Koramangala", user_email: "agent@ninjacart.com", role: "calling_agent" },
-      { pincode: "560095", locality: "Whitefield", user_email: "agent@ninjacart.com", role: "calling_agent" },
-      { pincode: "560034", locality: "Koramangala", user_email: "leadtaker@ninjacart.com", role: "lead_taker" },
-      { pincode: "560038", locality: "Indiranagar", user_email: "leadtaker@ninjacart.com", role: "lead_taker" },
-      { pincode: "560095", locality: "Whitefield", user_email: "leadtaker@ninjacart.com", role: "lead_taker" },
-      { pincode: "560034", locality: "Koramangala", user_email: "kam@ninjacart.com", role: "kam" },
-      { pincode: "560038", locality: "Indiranagar", user_email: "kam@ninjacart.com", role: "kam" },
-      { pincode: "560095", locality: "Whitefield", user_email: "kam@ninjacart.com", role: "kam" },
-      { pincode: "560008", locality: "Jayanagar", user_email: "kam@ninjacart.com", role: "kam" },
-      { pincode: "560001", locality: "MG Road", user_email: "kam@ninjacart.com", role: "kam" },
-      { pincode: "560034", locality: "Koramangala", user_email: "admin@ninjacart.com", role: "admin" },
-      { pincode: "560038", locality: "Indiranagar", user_email: "admin@ninjacart.com", role: "admin" },
-      { pincode: "560095", locality: "Whitefield", user_email: "admin@ninjacart.com", role: "admin" },
-      { pincode: "560008", locality: "Jayanagar", user_email: "admin@ninjacart.com", role: "admin" },
-      { pincode: "560001", locality: "MG Road", user_email: "admin@ninjacart.com", role: "admin" },
+      // KAM - Likhitha
+      { pincode: "560001", locality: "560001", user_email: "likhitha@ninjacart.com", role: "kam" },
+      { pincode: "560025", locality: "560025", user_email: "likhitha@ninjacart.com", role: "kam" },
+      { pincode: "560066", locality: "560066", user_email: "likhitha@ninjacart.com", role: "kam" },
+      // KAM - Tanmoy
+      { pincode: "560102", locality: "560102", user_email: "tanmoy@ninjacart.com", role: "kam" },
+      { pincode: "560103", locality: "560103", user_email: "tanmoy@ninjacart.com", role: "kam" },
+      // KAM - Sonu
+      { pincode: "560066", locality: "560066", user_email: "sonu@ninjacart.com", role: "kam" },
+      { pincode: "560048", locality: "560048", user_email: "sonu@ninjacart.com", role: "kam" },
+      // KAM - Srihari
+      { pincode: "560078", locality: "560078", user_email: "srihari@ninjacart.com", role: "kam" },
+      { pincode: "560102", locality: "560102", user_email: "srihari@ninjacart.com", role: "kam" },
+      { pincode: "560041", locality: "560041", user_email: "srihari@ninjacart.com", role: "kam" },
     ];
     await supabase.from("pincode_persona_map").insert(pincodeMap);
 
