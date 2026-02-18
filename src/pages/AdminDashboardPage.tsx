@@ -127,8 +127,8 @@ export default function AdminDashboardPage() {
       ]);
       const pCount = pRes.count ?? 0;
       const lCount = lRes.count ?? 0;
-      const oCount = oData?.length ?? 0;
-      const signedCount = (aData || []).filter((a: { status: string }) => a.status === "signed").length;
+      const oCount = oData.data?.length ?? 0;
+      const signedCount = (aData.data || []).filter((a: { status: string }) => a.status === "signed").length;
       const logs = logsRes.data || [];
       const todayCalls = logs.filter((l: { action: string }) => /call|dial|contact/i.test(l.action || "")).length;
       const todayVisits = logs.filter((l: { action: string }) => /visit|meet|sample/i.test(l.action || "")).length;

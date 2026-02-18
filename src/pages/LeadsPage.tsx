@@ -594,13 +594,14 @@ export default function LeadsPage() {
                 <TableHead className="text-xs">Locality</TableHead>
                 <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
                 <TableHead className="text-xs">Attempts</TableHead>
+                <TableHead className="text-xs">Remarks</TableHead>
                 <TableHead className="text-xs">Info</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                 ) : droppedProspects.length === 0 ? (
-                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No dropped prospects.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No dropped prospects.</TableCell></TableRow>
                 ) : droppedProspects.map(p => {
                   const lead = getLeadForProspect(p.id);
                   const callCount = lead?.call_count || 0;
@@ -618,6 +619,7 @@ export default function LeadsPage() {
                           {totalAttempts === 0 && <span className="text-xs text-muted-foreground">—</span>}
                         </div>
                       </TableCell>
+                      <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{lead?.remarks || "—"}</TableCell>
                       <TableCell><Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">Dropped</Badge></TableCell>
                     </TableRow>
                   );

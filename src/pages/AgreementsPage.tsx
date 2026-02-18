@@ -278,25 +278,6 @@ export default function AgreementsPage() {
 
   const handleDeliverOrder = async () => {
     if (!deliverOrderId) return;
-    const lead = getLeadForOrder(deliverOrderId);
-
-    // Check user distance from lead location
-    if (lead?.geo_lat && lead?.geo_lng && navigator.geolocation) {
-      try {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
-        );
-        const dist = getDistanceKm(pos.coords.latitude, pos.coords.longitude, Number(lead.geo_lat), Number(lead.geo_lng));
-        if (dist > 2) {
-          setDeliverError("You are far from Lead's location");
-          return;
-        }
-      } catch {
-        // If geolocation fails, show location error
-        setDeliverError("You are far from Lead's location");
-        return;
-      }
-    }
 
     await updateOrder(deliverOrderId, { status: "sample_delivered" });
     await incrementVisitCount(deliverOrderId);
@@ -1108,13 +1089,4 @@ export default function AgreementsPage() {
       </Dialog>
     </div>
   );
-}
-
-// Haversine distance in km
-function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
