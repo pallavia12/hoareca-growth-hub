@@ -225,11 +225,7 @@ export default function AgreementsPage() {
     dropped: droppedItems.length,
   }), [pendingOrders, deliveredItems, revisitItems, completedItems, droppedItems]);
 
-  const marginWarning = useMemo(() => {
-    if (!agreedPrice) return false;
-    const margin = Number(agreedPrice) - 50;
-    return margin < 90 || margin > 100;
-  }, [agreedPrice]);
+  // margin warning removed
 
   const resetSendForm = () => {
     setSendOrderId(null); setSendAgreementId(null);
@@ -243,17 +239,10 @@ export default function AgreementsPage() {
   const validate = (): FormErrors => {
     const e: FormErrors = {};
     if (!feedback) e.feedback = "Required";
-    if (!pricingType) e.pricingType = "Required";
-    if (!agreedPrice || Number(agreedPrice) <= 0) e.agreedPrice = "Required";
-    if (!paymentType) e.paymentType = "Required";
-    if (paymentType === "credit" && (!creditDays || Number(creditDays) <= 0)) e.creditDays = "Required";
-    if (!outletsInBangalore || Number(outletsInBangalore) <= 0) e.outletsInBangalore = "Required";
-    if (!deliverySlot) e.deliverySlot = "Required";
-    if (!distributionPartner) e.distributionPartner = "Required";
-    if (!expectedFirstOrder) e.expectedFirstOrder = "Required";
-    if (!expectedWeeklyVolume || Number(expectedWeeklyVolume) <= 0) e.expectedWeeklyVolume = "Required";
+    if (!feedbackRemarks.trim()) e.feedbackRemarks = "Required";
     if (!mailId.trim()) e.mailId = "Required";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mailId)) e.mailId = "Invalid email";
+    if (!kamRemarks.trim()) e.kamRemarks = "Required";
     return e;
   };
 
@@ -364,16 +353,16 @@ export default function AgreementsPage() {
   };
 
   const handleScheduleRevisit = async () => {
-    if (!revisitFeedback || !revisitDate || !revisitRemarks.trim()) return;
+    if (!revisitDate || !revisitRemarks.trim()) return;
     const orderId = revisitOrderId;
     if (!orderId) return;
     const timeStr = revisitTime ? ` at ${revisitTime}` : "";
-    const remarksStr = `[Re-visit: ${format(revisitDate, "dd MMM yyyy")}${timeStr}] Feedback: ${revisitFeedback}. ${revisitFeedbackRemarks ? revisitFeedbackRemarks + ". " : ""}${revisitRemarks}`;
+    const remarksStr = `[Re-visit: ${format(revisitDate, "dd MMM yyyy")}${timeStr}] ${revisitRemarks}`;
 
     if (revisitAgreementId) {
-      await updateAgreement(revisitAgreementId, { status: "revisit_needed", quality_feedback: revisitFeedback === "positive", quality_remarks: revisitFeedbackRemarks || null, remarks: remarksStr });
+      await updateAgreement(revisitAgreementId, { status: "revisit_needed", remarks: remarksStr });
     } else {
-      await addAgreement({ sample_order_id: orderId, status: "revisit_needed", quality_feedback: revisitFeedback === "positive", quality_remarks: revisitFeedbackRemarks || null, remarks: remarksStr });
+      await addAgreement({ sample_order_id: orderId, status: "revisit_needed", remarks: remarksStr });
     }
     await incrementVisitCount(orderId);
     toast({ title: `Revisit scheduled for ${format(revisitDate, "dd MMM yyyy")}${timeStr}` });
@@ -831,8 +820,9 @@ export default function AgreementsPage() {
                 <FieldError msg={errors.feedback} />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Feedback Remarks</Label>
-                <Textarea value={feedbackRemarks} onChange={e => setFeedbackRemarks(e.target.value)} className="text-xs min-h-[60px]" placeholder="Optional quality remarks..." />
+                <Label className="text-xs">Feedback Remarks *</Label>
+                <Textarea value={feedbackRemarks} onChange={e => setFeedbackRemarks(e.target.value)} className="text-xs min-h-[60px]" placeholder="Quality remarks..." />
+                <FieldError msg={errors.feedbackRemarks} />
               </div>
             </div>
 
@@ -855,12 +845,6 @@ export default function AgreementsPage() {
                 <div className="space-y-1">
                   <Label className="text-xs">Agreed Price per Kg (₹) *</Label>
                   <Input type="number" value={agreedPrice} onChange={e => setAgreedPrice(e.target.value)} className="h-8 text-xs" placeholder="e.g. 150" />
-                  {marginWarning && agreedPrice && (
-                    <Badge variant="outline" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 text-[10px]">
-                      <AlertTriangle className="w-3 h-3 mr-1" /> Margin outside 90-100 Rs/kg range
-                    </Badge>
-                  )}
-                  <FieldError msg={errors.agreedPrice} />
                 </div>
               </div>
               <div className="space-y-1">
@@ -879,9 +863,8 @@ export default function AgreementsPage() {
               </div>
               {paymentType === "credit" && (
                 <div className="space-y-1">
-                  <Label className="text-xs">Credit Days *</Label>
+                  <Label className="text-xs">Credit Days</Label>
                   <Input type="number" value={creditDays} onChange={e => setCreditDays(e.target.value)} className="h-8 text-xs w-32" placeholder="e.g. 30" />
-                  <FieldError msg={errors.creditDays} />
                 </div>
               )}
             </div>
@@ -975,14 +958,20 @@ export default function AgreementsPage() {
                 <FieldError msg={errors.mailId} />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">KAM Remarks</Label>
+                <Label className="text-xs">KAM Remarks *</Label>
                 <Textarea value={kamRemarks} onChange={e => setKamRemarks(e.target.value)} className="text-xs min-h-[60px]" placeholder="Any additional notes..." />
+                <FieldError msg={errors.kamRemarks} />
               </div>
             </div>
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" size="sm" className="text-xs" onClick={() => {
+              const e: FormErrors = {};
+              if (!feedback) e.feedback = "Required";
+              if (!feedbackRemarks.trim()) e.feedbackRemarks = "Required";
+              setErrors(e);
+              if (Object.keys(e).length > 0) return;
               setSendOpen(false);
               openScheduleRevisit(sendOrderId!, sendAgreementId);
             }}>
@@ -1003,23 +992,6 @@ export default function AgreementsPage() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Schedule Revisit</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Feedback *</Label>
-              <RadioGroup value={revisitFeedback} onValueChange={v => setRevisitFeedback(v as any)} className="flex gap-4">
-                <div className="flex items-center gap-1.5">
-                  <RadioGroupItem value="positive" id="rv-fb-pos" />
-                  <Label htmlFor="rv-fb-pos" className="text-xs cursor-pointer">Positive</Label>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <RadioGroupItem value="negative" id="rv-fb-neg" />
-                  <Label htmlFor="rv-fb-neg" className="text-xs cursor-pointer">Negative</Label>
-                </div>
-              </RadioGroup>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Feedback Remarks</Label>
-              <Textarea value={revisitFeedbackRemarks} onChange={e => setRevisitFeedbackRemarks(e.target.value)} className="text-xs min-h-[50px]" placeholder="Optional..." />
-            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Revisit Date *</Label>
@@ -1036,7 +1008,7 @@ export default function AgreementsPage() {
                 </Popover>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Time *</Label>
+                <Label className="text-xs">Time</Label>
                 <Input type="time" value={revisitTime} onChange={e => setRevisitTime(e.target.value)} className="h-8 text-xs" />
               </div>
             </div>
@@ -1047,7 +1019,7 @@ export default function AgreementsPage() {
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" onClick={handleScheduleRevisit} disabled={!revisitFeedback || !revisitDate || !revisitRemarks.trim()}>Save</Button>
+            <Button size="sm" onClick={handleScheduleRevisit} disabled={!revisitDate || !revisitRemarks.trim()}>Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
