@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,13 +32,6 @@ import {
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
-const otherSkuOptions = [
-  "Blueberry", "Orange Mandarin", "Apple USA", "Apple Italy", "Apple Poland", "Apple NZ",
-];
-
-const dropReasons = [
-  "Quality Issues", "Price Rejected", "Payment Terms", "Competition", "Changed Mind", "Other",
-];
 
 const esignBadgeClass: Record<string, string> = {
   not_sent: "bg-muted text-muted-foreground",
@@ -67,6 +60,17 @@ export default function AgreementsPage() {
   const { leads, updateLead } = useLeads();
   const partners = useDistributionPartners();
   const { toast } = useToast();
+
+  // Fetch drop reasons and SKU options from DB
+  const [dropReasons, setDropReasons] = useState<string[]>([]);
+  const [otherSkuOptions, setOtherSkuOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    supabase.from("drop_reasons").select("reason_text").eq("step_number", 4).eq("is_active", true)
+      .then(({ data }) => setDropReasons(data?.map(d => d.reason_text) || []));
+    supabase.from("sku_mapping").select("sku_name").order("sku_name")
+      .then(({ data }) => setOtherSkuOptions(data?.map(d => d.sku_name) || []));
+  }, []);
 
   const [tab, setTab] = useState<"pending_orders" | "delivered" | "revisit" | "completed" | "dropped">("pending_orders");
   const [search, setSearch] = useState("");

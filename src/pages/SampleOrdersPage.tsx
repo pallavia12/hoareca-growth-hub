@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -39,17 +40,29 @@ const statusColors: Record<string, string> = {
   dropped: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
-const dropReasons = [
-  "Price concerns", "Quality concerns", "No immediate need", "Competition preferred", "Other",
-];
-const countOptions = ["16", "18", "20", "22", "24"];
-const ripenessOptions = ["Ready-to-eat", "Hard", "Custom"];
 
 export default function SampleOrdersPage() {
   const { orders, loading, addOrder, updateOrder, refetch } = useSampleOrders();
   const { leads, updateLead } = useLeads();
   const { user } = useAuth();
   const { toast } = useToast();
+
+  // Fetch drop reasons, count options, ripeness options from DB
+  const [dropReasons, setDropReasons] = useState<string[]>([]);
+  const [countOptions, setCountOptions] = useState<string[]>([]);
+  const [ripenessOptions, setRipenessOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    supabase.from("drop_reasons").select("reason_text").eq("step_number", 3).eq("is_active", true)
+      .then(({ data }) => setDropReasons(data?.map(d => d.reason_text) || []));
+    supabase.from("sku_mapping").select("box_count").order("box_count")
+      .then(({ data }) => {
+        const counts = [...new Set((data || []).map(d => d.box_count).filter(Boolean))].map(String);
+        setCountOptions(counts.length > 0 ? counts : ["16", "18", "20"]);
+      });
+    supabase.from("stage_mapping").select("stage_description").order("stage_number")
+      .then(({ data }) => setRipenessOptions(data?.map(d => d.stage_description) || []));
+  }, []);
 
   const [tab, setTab] = useState<"scheduled" | "completed" | "revisit" | "dropped">("scheduled");
   const [search, setSearch] = useState("");

@@ -28,20 +28,6 @@ interface ActivityLog {
 
 type CurrentStage = "Prospect" | "Lead" | "Sample Order" | "Agreement" | "Customer";
 
-// Demo visit data for display
-const demoVisits: Record<string, Array<{ date: string; agent: string; stage: string; outcome: string; remarks: string }>> = {};
-const demoNames = ["Ravi Kumar", "Priya Sharma", "Karthik S", "Ananya R", "Suresh M"];
-const demoStages = ["Prospect", "Lead", "Sample Order", "Agreement"];
-const demoOutcomes = ["Interested", "Follow-up needed", "Sample requested", "Price discussed", "Agreement shared", "Not available", "Rescheduled"];
-const demoRemarks = [
-  "Chef liked the quality, wants 150g SKU",
-  "Discussed pricing, will confirm by Friday",
-  "Needs sample before committing",
-  "Compared with current supplier rates",
-  "Owner was not available, met manager",
-  "Positive feedback on Hass variety",
-  "Wants delivery slot change to morning",
-];
 
 export default function LeadMasterPage() {
   const { prospects } = useProspects();
@@ -90,17 +76,6 @@ export default function LeadMasterPage() {
       const totalVisits = lead?.visit_count || 0;
       const totalDays = stage1Days !== null ? (stage1Days + (stage2Days || 0) + (stage3Days || 0)) : 0;
 
-      // Generate demo visits if no real activity logs
-      if (!demoVisits[prospect.id]) {
-        const visitCount = 1 + (idx % 3);
-        demoVisits[prospect.id] = Array.from({ length: visitCount }, (_, vi) => ({
-          date: format(new Date(Date.now() - (vi + 1) * 3 * 86400000), "yyyy-MM-dd"),
-          agent: prospect.mapped_to || demoNames[idx % demoNames.length],
-          stage: currentStage === "Prospect" ? "Prospect" : demoStages[Math.min(vi, demoStages.length - 1)],
-          outcome: demoOutcomes[(idx + vi) % demoOutcomes.length],
-          remarks: demoRemarks[(idx + vi) % demoRemarks.length],
-        }));
-      }
 
       return {
         prospect,
@@ -154,13 +129,10 @@ export default function LeadMasterPage() {
   };
 
   const getLastVisits = (prospectId: string, leadId?: string) => {
-    // First check real activity logs
     const entityIds = [prospectId];
     if (leadId) entityIds.push(leadId);
     const realLogs = activityLogs.filter(l => entityIds.includes(l.entity_id)).slice(0, 3);
-    if (realLogs.length > 0) return { type: "real" as const, data: realLogs };
-    // Fallback to demo visits
-    return { type: "demo" as const, data: demoVisits[prospectId] || [] };
+    return { type: "real" as const, data: realLogs };
   };
 
   // Get pincode / locality info
@@ -315,24 +287,8 @@ export default function LeadMasterPage() {
                             </div>
                           );
                         }
-                        // Demo visits
-                        const demoList = visits.data as Array<{ date: string; agent: string; stage: string; outcome: string; remarks: string }>;
-                        if (demoList.length === 0) return <p className="text-xs text-muted-foreground">No visits recorded.</p>;
-                        return (
-                          <div className="space-y-2">
-                            {demoList.map((v, vi) => (
-                              <div key={vi} className="bg-background border rounded-md p-2 text-[11px] space-y-0.5">
-                                <div className="flex justify-between">
-                                  <span className="font-medium">{format(new Date(v.date), "dd MMM yyyy")}</span>
-                                  <Badge variant="outline" className="text-[9px]">{v.stage}</Badge>
-                                </div>
-                                <p><span className="text-muted-foreground">Agent:</span> {v.agent}</p>
-                                <p><span className="text-muted-foreground">Outcome:</span> {v.outcome}</p>
-                                <p><span className="text-muted-foreground">Remarks:</span> {v.remarks}</p>
-                              </div>
-                            ))}
-                          </div>
-                        );
+                        if (visits.data.length === 0) return <p className="text-xs text-muted-foreground">No visits recorded.</p>;
+                        return null;
                       })()}
                     </div>
                   </div>
