@@ -603,6 +603,11 @@ export default function SampleOrdersPage() {
               <Input value={form.visit_date} readOnly className="bg-muted/50 text-xs" />
             </div>
 
+            <div className="space-y-1">
+              <Label className="text-xs">Weekly Demand (kg)</Label>
+              <Input type="number" placeholder="e.g. 10" value={form.demand_per_week_kg} onChange={e => setForm(f => ({ ...f, demand_per_week_kg: e.target.value }))} />
+            </div>
+
             <p className="text-xs font-medium text-foreground mt-1">SKU Specifications</p>
 
             {/* SKU Dropdown */}
@@ -654,10 +659,6 @@ export default function SampleOrdersPage() {
             </div>
 
             <p className="text-xs font-medium text-foreground mt-1">Sample Order Details</p>
-            <div className="space-y-1">
-              <Label className="text-xs">Weekly Demand (kg)</Label>
-              <Input type="number" placeholder="e.g. 10" value={form.demand_per_week_kg} onChange={e => setForm(f => ({ ...f, demand_per_week_kg: e.target.value }))} />
-            </div>
 
             <div className="space-y-1">
               <Label className="text-xs">Delivery Date</Label>
