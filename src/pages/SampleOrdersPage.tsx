@@ -25,7 +25,7 @@ import { useLeads } from "@/hooks/useLeads";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Search, CalendarIcon, Package, Eye, Clock, XCircle, RotateCcw,
+  Search, CalendarIcon, Package, Eye, Clock, XCircle, RotateCcw, Plus, Trash2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,10 @@ const statusColors: Record<string, string> = {
   dropped: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
+interface SkuRow {
+  quantity: string;
+  ripeness_stage: string;
+}
 
 export default function SampleOrdersPage() {
   const { orders, loading, addOrder, updateOrder, refetch } = useSampleOrders();
@@ -47,22 +51,18 @@ export default function SampleOrdersPage() {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  // Fetch drop reasons, count options, ripeness options from DB
+  // Fetch drop reasons, SKU options from DB
   const [dropReasons, setDropReasons] = useState<string[]>([]);
-  const [countOptions, setCountOptions] = useState<string[]>([]);
-  const [ripenessOptions, setRipenessOptions] = useState<string[]>([]);
+  const [skuOptions, setSkuOptions] = useState<{ id: string; sku_name: string }[]>([]);
 
   useEffect(() => {
     supabase.from("drop_reasons").select("reason_text").eq("step_number", 3).eq("is_active", true)
       .then(({ data }) => setDropReasons(data?.map(d => d.reason_text) || []));
-    supabase.from("sku_mapping").select("box_count").order("box_count")
-      .then(({ data }) => {
-        const counts = [...new Set((data || []).map(d => d.box_count).filter(Boolean))].map(String);
-        setCountOptions(counts.length > 0 ? counts : []);
-      });
-    supabase.from("stage_mapping").select("stage_description").order("stage_number")
-      .then(({ data }) => setRipenessOptions(data?.map(d => d.stage_description) || []));
+    supabase.from("sku_mapping").select("id, sku_name").order("sku_name")
+      .then(({ data }) => setSkuOptions(data || []));
   }, []);
+
+  const ripenessStages = ["Stage 1", "Stage 2", "Stage 3", "Stage 4", "Stage 5"];
 
   const [tab, setTab] = useState<"scheduled" | "completed" | "revisit" | "dropped">("scheduled");
   const [search, setSearch] = useState("");
@@ -93,17 +93,17 @@ export default function SampleOrdersPage() {
   // Form
   const [form, setForm] = useState({
     delivery_address: "", delivery_date: "", delivery_slot: "",
-    sample_qty_units: "", demand_per_week_kg: "", remarks: "",
+    demand_per_week_kg: "", remarks: "",
     visit_date: format(new Date(), "yyyy-MM-dd"),
-    count_per_box: "", ripeness_stage: "", follow_up_date: "",
+    selected_sku: "", sku_spec_notes: "",
   });
+  const [skuRows, setSkuRows] = useState<SkuRow[]>([{ quantity: "", ripeness_stage: "" }]);
   const [visitPhotoUrl, setVisitPhotoUrl] = useState<string | null>(null);
-  const [followUpDate, setFollowUpDate] = useState<Date | undefined>();
   const [deliveryDate, setDeliveryDate] = useState<Date | undefined>();
 
   const resetForm = () => {
-    setForm({ delivery_address: "", delivery_date: "", delivery_slot: "", sample_qty_units: "", demand_per_week_kg: "", remarks: "", visit_date: format(new Date(), "yyyy-MM-dd"), count_per_box: "", ripeness_stage: "", follow_up_date: "" });
-    setFollowUpDate(undefined);
+    setForm({ delivery_address: "", delivery_date: "", delivery_slot: "", demand_per_week_kg: "", remarks: "", visit_date: format(new Date(), "yyyy-MM-dd"), selected_sku: "", sku_spec_notes: "" });
+    setSkuRows([{ quantity: "", ripeness_stage: "" }]);
     setDeliveryDate(undefined);
     setLogVisitLeadId(null);
     setLogVisitOrderId(null);
@@ -122,7 +122,6 @@ export default function SampleOrdersPage() {
     [orders, leads]
   );
 
-  // Scheduled: qualified leads + pending_visit orders
   const scheduledLeads = useMemo(() => {
     let list = qualifiedLeads;
     if (search) {
@@ -153,13 +152,12 @@ export default function SampleOrdersPage() {
         if (!(o.lead?.client_name || "").toLowerCase().includes(s)) return false;
       }
       if (filterLocality && filterLocality !== "all" && o.lead?.locality !== filterLocality) return false;
-      // Follow-up date filter
       if (followUpFrom || followUpTo) {
-        const fuMatch = o.remarks?.match(/Follow-up:\s*(\d{2}\s\w+\s\d{4})/);
-        if (!fuMatch) return false;
-        const fuDate = new Date(fuMatch[1]);
-        if (followUpFrom && fuDate < followUpFrom) return false;
-        if (followUpTo && fuDate > followUpTo) return false;
+        const dd = o.delivery_date;
+        if (!dd) return false;
+        const dDate = new Date(dd);
+        if (followUpFrom && dDate < followUpFrom) return false;
+        if (followUpTo && dDate > followUpTo) return false;
       }
       return true;
     });
@@ -215,13 +213,20 @@ export default function SampleOrdersPage() {
   };
 
   const handleBookSampleOrder = async () => {
-    if (!logVisitLeadId || !form.remarks || !followUpDate || !visitPhotoUrl) return;
+    if (!logVisitLeadId || !form.remarks || !form.sku_spec_notes || !visitPhotoUrl) return;
+    const skuName = skuOptions.find(s => s.id === form.selected_sku)?.sku_name || "";
+    const skuRowsSummary = skuRows
+      .filter(r => r.quantity || r.ripeness_stage)
+      .map(r => `Qty: ${r.quantity || "—"}, Ripeness: ${r.ripeness_stage || "—"}`)
+      .join(" | ");
     const specNotes = [
-      form.count_per_box && `Count/box: ${form.count_per_box}`,
-      form.ripeness_stage && `Ripeness: ${form.ripeness_stage}`,
-      followUpDate && `Follow-up: ${format(followUpDate, "dd MMM yyyy")}`,
+      skuName && `SKU: ${skuName}`,
+      skuRowsSummary,
+      deliveryDate && `Delivery: ${format(deliveryDate, "dd MMM yyyy")}`,
     ].filter(Boolean).join(" | ");
-    const fullRemarks = specNotes ? `${form.remarks}\n[Specs] ${specNotes}` : form.remarks;
+    const fullRemarks = `${form.remarks}\n[SKU Specs] ${specNotes}\n[SKU Notes] ${form.sku_spec_notes}`;
+
+    const totalQty = skuRows.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
 
     if (logVisitOrderId) {
       await updateOrder(logVisitOrderId, {
@@ -230,7 +235,7 @@ export default function SampleOrdersPage() {
         delivery_address: form.delivery_address || null,
         delivery_date: deliveryDate ? format(deliveryDate, "yyyy-MM-dd") : null,
         delivery_slot: form.delivery_slot || null,
-        sample_qty_units: form.sample_qty_units ? Number(form.sample_qty_units) : null,
+        sample_qty_units: totalQty || null,
         demand_per_week_kg: form.demand_per_week_kg ? Number(form.demand_per_week_kg) : null,
       });
     } else {
@@ -242,11 +247,10 @@ export default function SampleOrdersPage() {
         delivery_address: form.delivery_address || null,
         delivery_date: deliveryDate ? format(deliveryDate, "yyyy-MM-dd") : null,
         delivery_slot: form.delivery_slot || null,
-        sample_qty_units: form.sample_qty_units ? Number(form.sample_qty_units) : null,
+        sample_qty_units: totalQty || null,
         demand_per_week_kg: form.demand_per_week_kg ? Number(form.demand_per_week_kg) : null,
       });
     }
-    // Increment visit count
     const lead = leads.find(l => l.id === logVisitLeadId);
     if (lead) {
       await updateLead(logVisitLeadId, { visit_count: (lead.visit_count || 0) + 1 });
@@ -296,7 +300,6 @@ export default function SampleOrdersPage() {
         visit_date: format(new Date(), "yyyy-MM-dd"),
       });
     }
-    // Increment visit count
     const leadId = dropLeadId || (dropOrderId ? orders.find(o => o.id === dropOrderId)?.lead_id : null);
     if (leadId) {
       const lead = leads.find(l => l.id === leadId);
@@ -312,13 +315,6 @@ export default function SampleOrdersPage() {
     setDropRemarks("");
   };
 
-  const extractFollowUp = (remarks: string | null) => {
-    if (!remarks) return null;
-    const match = remarks.match(/Follow-up:\s*(\d{2}\s\w+\s\d{4})/);
-    return match ? match[1] : null;
-  };
-
-  // Render scheduled table row
   const renderScheduledRow = (leadId: string, clientName: string, pmName: string | null, visitDate: string | null, kam: string | null, orderId?: string) => (
     <TableRow key={orderId || leadId} className="text-sm">
       <TableCell className="font-medium max-w-[180px] truncate">{clientName}</TableCell>
@@ -339,6 +335,11 @@ export default function SampleOrdersPage() {
       </TableCell>
     </TableRow>
   );
+
+  const addSkuRow = () => setSkuRows(prev => [...prev, { quantity: "", ripeness_stage: "" }]);
+  const removeSkuRow = (idx: number) => setSkuRows(prev => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev);
+  const updateSkuRow = (idx: number, field: keyof SkuRow, value: string) =>
+    setSkuRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
 
   return (
     <div className="space-y-4">
@@ -448,7 +449,7 @@ export default function SampleOrdersPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">Client Name</TableHead>
-                      <TableHead className="text-xs">Follow-up Date</TableHead>
+                      <TableHead className="text-xs">Delivery Date</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Qty</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Status</TableHead>
                     </TableRow>
@@ -457,25 +458,22 @@ export default function SampleOrdersPage() {
                     {completedOrders.length === 0 ? (
                       <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No completed orders yet.</TableCell></TableRow>
                     ) : (
-                      completedOrders.map(o => {
-                        const fu = extractFollowUp(o.remarks);
-                        return (
-                          <TableRow key={o.id} className="text-sm">
-                            <TableCell className="font-medium">{o.lead?.client_name || "Unknown"}</TableCell>
-                            <TableCell>
-                              {fu ? (
-                                <Badge variant="outline" className="text-xs bg-warning/10 text-warning border-warning/20">
-                                  <CalendarIcon className="w-3 h-3 mr-1" /> {fu}
-                                </Badge>
-                              ) : <span className="text-xs text-muted-foreground">—</span>}
-                            </TableCell>
-                            <TableCell className="text-xs hidden sm:table-cell">{o.sample_qty_units || "—"} units</TableCell>
-                            <TableCell className="hidden sm:table-cell">
-                              <Badge variant="outline" className={`text-[10px] ${statusColors[o.status]}`}>{o.status.replace(/_/g, " ")}</Badge>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
+                      completedOrders.map(o => (
+                        <TableRow key={o.id} className="text-sm">
+                          <TableCell className="font-medium">{o.lead?.client_name || "Unknown"}</TableCell>
+                          <TableCell>
+                            {o.delivery_date ? (
+                              <Badge variant="outline" className="text-xs bg-warning/10 text-warning border-warning/20">
+                                <CalendarIcon className="w-3 h-3 mr-1" /> {format(new Date(o.delivery_date), "dd MMM yyyy")}
+                              </Badge>
+                            ) : <span className="text-xs text-muted-foreground">—</span>}
+                          </TableCell>
+                          <TableCell className="text-xs hidden sm:table-cell">{o.sample_qty_units || "—"} units</TableCell>
+                          <TableCell className="hidden sm:table-cell">
+                            <Badge variant="outline" className={`text-[10px] ${statusColors[o.status]}`}>{o.status.replace(/_/g, " ")}</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))
                     )}
                   </TableBody>
                 </Table>
@@ -605,34 +603,60 @@ export default function SampleOrdersPage() {
               <Input value={form.visit_date} readOnly className="bg-muted/50 text-xs" />
             </div>
 
-            <p className="text-xs font-medium text-foreground mt-1">Avocado Specifications</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Count per Box</Label>
-                <Select value={form.count_per_box} onValueChange={v => setForm(f => ({ ...f, count_per_box: v }))}>
-                  <SelectTrigger className="text-xs"><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>{countOptions.map(c => <SelectItem key={c} value={c}>{c} count</SelectItem>)}</SelectContent>
-                </Select>
+            <p className="text-xs font-medium text-foreground mt-1">SKU Specifications</p>
+
+            {/* SKU Dropdown */}
+            <div className="space-y-1">
+              <Label className="text-xs">Select SKU</Label>
+              <Select value={form.selected_sku} onValueChange={v => setForm(f => ({ ...f, selected_sku: v }))}>
+                <SelectTrigger className="text-xs"><SelectValue placeholder="Select SKU" /></SelectTrigger>
+                <SelectContent>
+                  {skuOptions.map(s => (
+                    <SelectItem key={s.id} value={s.id} className="text-xs">{s.sku_name} ({s.id.slice(0, 8)})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* SKU Rows: Quantity + Ripeness */}
+            {skuRows.map((row, idx) => (
+              <div key={idx} className="flex gap-2 items-end">
+                <div className="flex-1 space-y-1">
+                  <Label className="text-xs">Quantity (units)</Label>
+                  <Input type="number" placeholder="e.g. 5" value={row.quantity} onChange={e => updateSkuRow(idx, "quantity", e.target.value)} />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <Label className="text-xs">Ripeness Stage</Label>
+                  <Select value={row.ripeness_stage} onValueChange={v => updateSkuRow(idx, "ripeness_stage", v)}>
+                    <SelectTrigger className="text-xs"><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent>
+                      {ripenessStages.map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {skuRows.length > 1 && (
+                  <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => removeSkuRow(idx)}>
+                    <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                  </Button>
+                )}
+                {idx === skuRows.length - 1 && (
+                  <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={addSkuRow}>
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
+                )}
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Ripeness Stage</Label>
-                <Select value={form.ripeness_stage} onValueChange={v => setForm(f => ({ ...f, ripeness_stage: v }))}>
-                  <SelectTrigger className="text-xs"><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>{ripenessOptions.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
+            ))}
+
+            {/* SKU Specification notes - mandatory */}
+            <div className="space-y-1">
+              <Label className="text-xs">SKU Specification *</Label>
+              <Textarea placeholder="Enter SKU specification details..." value={form.sku_spec_notes} onChange={e => setForm(f => ({ ...f, sku_spec_notes: e.target.value }))} rows={2} />
             </div>
 
             <p className="text-xs font-medium text-foreground mt-1">Sample Order Details</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Quantity (units)</Label>
-                <Input type="number" placeholder="e.g. 5" value={form.sample_qty_units} onChange={e => setForm(f => ({ ...f, sample_qty_units: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Weekly Demand (kg)</Label>
-                <Input type="number" placeholder="e.g. 10" value={form.demand_per_week_kg} onChange={e => setForm(f => ({ ...f, demand_per_week_kg: e.target.value }))} />
-              </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Weekly Demand (kg)</Label>
+              <Input type="number" placeholder="e.g. 10" value={form.demand_per_week_kg} onChange={e => setForm(f => ({ ...f, demand_per_week_kg: e.target.value }))} />
             </div>
 
             <div className="space-y-1">
@@ -675,21 +699,6 @@ export default function SampleOrdersPage() {
 
             {/* Mandatory photo capture */}
             <PhotoCapture label="Visit Photo" required={true} value={visitPhotoUrl} onCapture={setVisitPhotoUrl} />
-
-            <div className="space-y-1">
-              <Label className="text-xs">Next Follow-up Date *</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className={cn("w-full justify-start text-left font-normal text-xs h-9", !followUpDate && "text-muted-foreground")}>
-                    <CalendarIcon className="w-3 h-3 mr-1" />
-                    {followUpDate ? format(followUpDate, "dd MMM yyyy") : "Pick follow-up date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar mode="single" selected={followUpDate} onSelect={setFollowUpDate} initialFocus className="p-3 pointer-events-auto" />
-                </PopoverContent>
-              </Popover>
-            </div>
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
@@ -698,7 +707,7 @@ export default function SampleOrdersPage() {
             </Button>
             <div className="flex gap-2">
               <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-              <Button size="sm" onClick={handleBookSampleOrder} disabled={!logVisitLeadId || !form.remarks || !followUpDate || !visitPhotoUrl}>
+              <Button size="sm" onClick={handleBookSampleOrder} disabled={!logVisitLeadId || !form.remarks || !form.sku_spec_notes || !visitPhotoUrl}>
                 <Package className="w-3 h-3 mr-1" /> Book Sample Order
               </Button>
             </div>
