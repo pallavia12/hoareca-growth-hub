@@ -75,6 +75,22 @@ export default function AgreementsPage() {
 
   const [tab, setTab] = useState<"pending_orders" | "delivered" | "revisit" | "completed" | "dropped">("pending_orders");
   const [search, setSearch] = useState("");
+  const [filterAgent, setFilterAgent] = useState("");
+
+  // Reassign state
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassignLeadId, setReassignLeadId] = useState<string | null>(null);
+  const [reassignOption, setReassignOption] = useState<"call" | "visit" | "unassign">("call");
+  const [reassignStep, setReassignStep] = useState<1 | 2>(1);
+  const [reassignTo, setReassignTo] = useState("");
+  const [reassignUserSearch, setReassignUserSearch] = useState("");
+  const [allUsers, setAllUsers] = useState<{ email: string; full_name: string | null }[]>([]);
+
+  useEffect(() => {
+    supabase.from("profiles").select("email, full_name").then(({ data }) => {
+      if (data) setAllUsers(data.filter(u => u.email));
+    });
+  }, []);
 
   // Completed tab filters
   const [filterEsign, setFilterEsign] = useState("");
@@ -216,6 +232,39 @@ export default function AgreementsPage() {
     }
     return items;
   }, [enriched, search]);
+
+  const agents = useMemo(() => {
+    const set = new Set<string>();
+    enriched.forEach(a => { if (a.lead?.created_by) set.add(a.lead.created_by); });
+    return [...set].sort();
+  }, [enriched]);
+
+  const filteredReassignUsers = useMemo(() => {
+    const s = reassignUserSearch.toLowerCase();
+    return allUsers.filter(u => !s || (u.full_name || "").toLowerCase().includes(s) || (u.email || "").toLowerCase().includes(s));
+  }, [allUsers, reassignUserSearch]);
+
+  const openReassign = (leadId: string) => {
+    setReassignLeadId(leadId);
+    setReassignOption("call");
+    setReassignStep(1);
+    setReassignTo("");
+    setReassignUserSearch("");
+    setReassignOpen(true);
+  };
+
+  const handleConfirmReassign = async () => {
+    if (!reassignLeadId) return;
+    if (reassignOption === "unassign") {
+      await updateLead(reassignLeadId, { created_by: null });
+      toast({ title: "Lead unassigned" });
+    } else {
+      if (!reassignTo) return;
+      await updateLead(reassignLeadId, { created_by: reassignTo });
+      toast({ title: "Lead re-assigned" });
+    }
+    setReassignOpen(false);
+  };
 
   const counts = useMemo(() => ({
     pending_orders: pendingOrders.length,
@@ -450,6 +499,13 @@ export default function AgreementsPage() {
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
             <Input placeholder="Search lead name..." className="pl-8 h-9 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          <Select value={filterAgent} onValueChange={setFilterAgent}>
+            <SelectTrigger className="w-full sm:w-[160px] h-9 text-xs"><SelectValue placeholder="All Agents" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Agents</SelectItem>
+              {agents.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+            </SelectContent>
+          </Select>
           {tab === "completed" && (
             <>
               <Select value={filterEsign} onValueChange={setFilterEsign}>
@@ -598,6 +654,7 @@ export default function AgreementsPage() {
                     <TableRow>
                       <TableHead className="text-xs">Lead Name</TableHead>
                       <TableHead className="text-xs">Visits</TableHead>
+                      <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs">Next Visit</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Last Feedback</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
@@ -605,7 +662,7 @@ export default function AgreementsPage() {
                   </TableHeader>
                   <TableBody>
                     {revisitItems.length === 0 ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No revisits scheduled.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No revisits scheduled.</TableCell></TableRow>
                     ) : (
                       revisitItems.map(a => {
                         const nextVisit = extractRevisitDate(a.remarks);
@@ -613,6 +670,7 @@ export default function AgreementsPage() {
                           <TableRow key={a.id} className="text-sm">
                             <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">{a.lead?.visit_count || 0}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{a.lead?.created_by || "—"}</TableCell>
                             <TableCell className="text-xs">{nextVisit || "—"}</TableCell>
                             <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
                             <TableCell>
@@ -620,6 +678,11 @@ export default function AgreementsPage() {
                                 <Button size="sm" className="text-xs h-7" onClick={() => openSendAgreement(a.sample_order_id, a.id)}>
                                   <Send className="w-3 h-3 mr-1" /> Send Agreement
                                 </Button>
+                                {a.lead?.id && (
+                                  <Button size="sm" variant="outline" className="text-xs h-7 border-warning/40 text-warning hover:bg-warning/10" onClick={() => openReassign(a.lead!.id)}>
+                                    Re-assign
+                                  </Button>
+                                )}
                                 <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => openNotInterested(a.sample_order_id, a.id)}>
                                   <XCircle className="w-3 h-3 mr-1" /> Not Interested
                                 </Button>
@@ -646,9 +709,9 @@ export default function AgreementsPage() {
                     <TableRow>
                       <TableHead className="text-xs">Lead Name</TableHead>
                       <TableHead className="text-xs">Total Visits</TableHead>
+                      <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Sent Date</TableHead>
                       <TableHead className="text-xs">E-sign</TableHead>
-                      <TableHead className="text-xs hidden md:table-cell">Email</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Price ₹/kg</TableHead>
                       <TableHead className="text-xs hidden md:table-cell">Weekly Vol</TableHead>
                     </TableRow>
@@ -661,13 +724,13 @@ export default function AgreementsPage() {
                         <TableRow key={a.id} className="text-sm">
                           <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{a.lead?.visit_count || 0}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{a.lead?.created_by || "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{format(new Date(a.created_at), "dd MMM")}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className={`text-[10px] ${esignBadgeClass[a.esign_status || "not_sent"]}`}>
                               {(a.esign_status || "not_sent").replace(/_/g, " ")}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground hidden md:table-cell truncate max-w-[140px]">{a.mail_id || "—"}</TableCell>
                           <TableCell className="text-xs hidden sm:table-cell">{a.agreed_price_per_kg ? `₹${a.agreed_price_per_kg}` : "—"}</TableCell>
                           <TableCell className="text-xs hidden md:table-cell">{a.expected_weekly_volume_kg ? `${a.expected_weekly_volume_kg} kg` : "—"}</TableCell>
                         </TableRow>
@@ -690,9 +753,9 @@ export default function AgreementsPage() {
                     <TableRow>
                       <TableHead className="text-xs">Lead Name</TableHead>
                       <TableHead className="text-xs">Total Visits</TableHead>
+                      <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Last Feedback</TableHead>
                       <TableHead className="text-xs">Reason</TableHead>
-                      <TableHead className="text-xs hidden md:table-cell">Final Remarks</TableHead>
                       <TableHead className="text-xs hidden md:table-cell">Dropped</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -706,9 +769,9 @@ export default function AgreementsPage() {
                           <TableRow key={a.id} className="text-sm">
                             <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">{a.lead?.visit_count || 0}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{a.lead?.created_by || "—"}</TableCell>
                             <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
                             <TableCell className="text-xs">{reason}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate hidden md:table-cell">{finalRemarks}</TableCell>
                             <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{format(new Date(a.updated_at), "dd MMM")}</TableCell>
                           </TableRow>
                         );
@@ -1057,6 +1120,59 @@ export default function AgreementsPage() {
             <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
             <Button size="sm" variant="destructive" onClick={handleNotInterested} disabled={!dropReason || !dropRemarks.trim()}>Confirm</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Re-assign Dialog */}
+      <Dialog open={reassignOpen} onOpenChange={open => { if (!open) setReassignOpen(false); }}>
+        <DialogContent className="max-w-sm">
+          {reassignStep === 1 ? (
+            <>
+              <DialogHeader><DialogTitle className="text-base">Re-assign Lead</DialogTitle></DialogHeader>
+              <RadioGroup value={reassignOption} onValueChange={v => setReassignOption(v as any)} className="space-y-3 py-2">
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="call" id="s4-rc" /><Label htmlFor="s4-rc" className="text-sm cursor-pointer">Re-assign: Call</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="visit" id="s4-rv" /><Label htmlFor="s4-rv" className="text-sm cursor-pointer">Re-assign: Visit</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="unassign" id="s4-ru" /><Label htmlFor="s4-ru" className="text-sm cursor-pointer text-destructive">Unassign</Label>
+                </div>
+              </RadioGroup>
+              <DialogFooter>
+                <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+                {reassignOption === "unassign" ? (
+                  <Button size="sm" variant="destructive" onClick={handleConfirmReassign}>Unassign</Button>
+                ) : (
+                  <Button size="sm" onClick={() => setReassignStep(2)}>Next</Button>
+                )}
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader><DialogTitle className="text-base">Re-assign To</DialogTitle></DialogHeader>
+              <div className="space-y-3 py-2">
+                <Input placeholder="Search users..." value={reassignUserSearch} onChange={e => setReassignUserSearch(e.target.value)} className="h-8 text-xs" />
+                <div className="max-h-48 overflow-y-auto border rounded-md">
+                  {filteredReassignUsers.length === 0 ? (
+                    <p className="p-3 text-xs text-muted-foreground text-center">No users found</p>
+                  ) : filteredReassignUsers.map(u => (
+                    <button key={u.email}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors border-b last:border-b-0 ${reassignTo === u.email ? "bg-primary/10 text-primary" : ""}`}
+                      onClick={() => setReassignTo(u.email!)}>
+                      <span className="font-medium">{u.full_name || u.email}</span>
+                      {u.full_name && <span className="text-muted-foreground ml-2">{u.email}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" size="sm" onClick={() => setReassignStep(1)}>Back</Button>
+                <Button size="sm" onClick={handleConfirmReassign} disabled={!reassignTo}>Re-assign</Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

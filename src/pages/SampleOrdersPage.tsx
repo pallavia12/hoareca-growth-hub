@@ -19,6 +19,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Calendar } from "@/components/ui/calendar";
 import { useSampleOrders } from "@/hooks/useSampleOrders";
 import { useLeads } from "@/hooks/useLeads";
@@ -67,6 +68,22 @@ export default function SampleOrdersPage() {
   const [tab, setTab] = useState<"scheduled" | "completed" | "revisit" | "dropped">("scheduled");
   const [search, setSearch] = useState("");
   const [filterLocality, setFilterLocality] = useState("");
+  const [filterAgent, setFilterAgent] = useState("");
+
+  // Reassign state (shared with step 1 logic)
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassignLeadId, setReassignLeadId] = useState<string | null>(null);
+  const [reassignOption, setReassignOption] = useState<"call" | "visit" | "unassign">("call");
+  const [reassignStep, setReassignStep] = useState<1 | 2>(1);
+  const [reassignTo, setReassignTo] = useState("");
+  const [reassignUserSearch, setReassignUserSearch] = useState("");
+  const [allUsers, setAllUsers] = useState<{ email: string; full_name: string | null }[]>([]);
+
+  useEffect(() => {
+    supabase.from("profiles").select("email, full_name").then(({ data }) => {
+      if (data) setAllUsers(data.filter(u => u.email));
+    });
+  }, []);
 
   // Log Visit dialog
   const [logVisitOpen, setLogVisitOpen] = useState(false);
@@ -171,9 +188,10 @@ export default function SampleOrdersPage() {
         if (!(o.lead?.client_name || "").toLowerCase().includes(s)) return false;
       }
       if (filterLocality && filterLocality !== "all" && o.lead?.locality !== filterLocality) return false;
+      if (filterAgent && filterAgent !== "all" && o.lead?.created_by !== filterAgent) return false;
       return true;
     });
-  }, [ordersWithLeads, search, filterLocality]);
+  }, [ordersWithLeads, search, filterLocality, filterAgent]);
 
   const droppedOrders = useMemo(() => {
     return ordersWithLeads.filter(o => {
@@ -182,9 +200,44 @@ export default function SampleOrdersPage() {
         const s = search.toLowerCase();
         if (!(o.lead?.client_name || "").toLowerCase().includes(s)) return false;
       }
+      if (filterAgent && filterAgent !== "all" && o.lead?.created_by !== filterAgent) return false;
       return true;
     });
-  }, [ordersWithLeads, search]);
+  }, [ordersWithLeads, search, filterAgent]);
+
+  const agents = useMemo(() => {
+    const set = new Set<string>();
+    ordersWithLeads.forEach(o => { if (o.lead?.created_by) set.add(o.lead.created_by); });
+    return [...set].sort();
+  }, [ordersWithLeads]);
+
+  const filteredReassignUsers = useMemo(() => {
+    const s = reassignUserSearch.toLowerCase();
+    return allUsers.filter(u => !s || (u.full_name || "").toLowerCase().includes(s) || (u.email || "").toLowerCase().includes(s));
+  }, [allUsers, reassignUserSearch]);
+
+  const openReassign = (leadId: string) => {
+    setReassignLeadId(leadId);
+    setReassignOption("call");
+    setReassignStep(1);
+    setReassignTo("");
+    setReassignUserSearch("");
+    setReassignOpen(true);
+  };
+
+  const handleConfirmReassign = async () => {
+    if (!reassignLeadId) return;
+    // In Step 3, re-assign means updating the lead's created_by
+    if (reassignOption === "unassign") {
+      await updateLead(reassignLeadId, { created_by: null });
+      toast({ title: "Lead unassigned" });
+    } else {
+      if (!reassignTo) return;
+      await updateLead(reassignLeadId, { created_by: reassignTo });
+      toast({ title: "Lead re-assigned" });
+    }
+    setReassignOpen(false);
+  };
 
   const counts = useMemo(() => ({
     scheduled: scheduledLeads.length + scheduledOrders.length,
@@ -315,15 +368,16 @@ export default function SampleOrdersPage() {
     setDropRemarks("");
   };
 
-  const renderScheduledRow = (leadId: string, clientName: string, pmName: string | null, visitDate: string | null, kam: string | null, orderId?: string) => (
+  const renderScheduledRow = (leadId: string, clientName: string, pmName: string | null, visitDate: string | null, assignedTo: string | null, orderId?: string) => (
     <TableRow key={orderId || leadId} className="text-sm">
       <TableCell className="font-medium max-w-[180px] truncate">{clientName}</TableCell>
       <TableCell className="text-xs text-muted-foreground">{pmName || "—"}</TableCell>
       <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{visitDate ? format(new Date(visitDate), "dd MMM") : "—"}</TableCell>
-      <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{kam || "—"}</TableCell>
+      <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{assignedTo || "—"}</TableCell>
       <TableCell>
         <div className="flex gap-1 flex-wrap">
           <Button size="sm" className="text-xs h-7" onClick={() => openLogVisit(leadId, orderId)}>Log Visit</Button>
+          <Button size="sm" variant="outline" className="text-xs h-7 border-warning/40 text-warning hover:bg-warning/10" onClick={() => openReassign(leadId)}>Re-assign</Button>
           <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => {
             setDropLeadId(leadId);
             setDropOrderId(orderId || null);
@@ -375,6 +429,13 @@ export default function SampleOrdersPage() {
               {localities.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
             </SelectContent>
           </Select>
+          <Select value={filterAgent} onValueChange={setFilterAgent}>
+            <SelectTrigger className="w-full sm:w-[160px] h-9 text-xs"><SelectValue placeholder="All Agents" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Agents</SelectItem>
+              {agents.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+            </SelectContent>
+          </Select>
           {tab === "completed" && (
             <div className="flex gap-2">
               <Popover>
@@ -414,7 +475,7 @@ export default function SampleOrdersPage() {
                       <TableHead className="text-xs">Client Name</TableHead>
                       <TableHead className="text-xs">PM Name</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Visit Date</TableHead>
-                      <TableHead className="text-xs hidden md:table-cell">KAM</TableHead>
+                      <TableHead className="text-xs hidden md:table-cell">Assigned To</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -449,6 +510,8 @@ export default function SampleOrdersPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">Client Name</TableHead>
+                      <TableHead className="text-xs">Visits</TableHead>
+                      <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs">Delivery Date</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Qty</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Status</TableHead>
@@ -456,11 +519,13 @@ export default function SampleOrdersPage() {
                   </TableHeader>
                   <TableBody>
                     {completedOrders.length === 0 ? (
-                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No completed orders yet.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No completed orders yet.</TableCell></TableRow>
                     ) : (
                       completedOrders.map(o => (
                         <TableRow key={o.id} className="text-sm">
                           <TableCell className="font-medium">{o.lead?.client_name || "Unknown"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{o.lead?.visit_count || 0}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{o.lead?.created_by || "—"}</TableCell>
                           <TableCell>
                             {o.delivery_date ? (
                               <Badge variant="outline" className="text-xs bg-warning/10 text-warning border-warning/20">
@@ -491,32 +556,26 @@ export default function SampleOrdersPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">Client Name</TableHead>
-                      <TableHead className="text-xs">PM Name</TableHead>
                       <TableHead className="text-xs">Visits</TableHead>
+                      <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Visit Date</TableHead>
-                      <TableHead className="text-xs hidden md:table-cell">KAM</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {revisitOrders.length === 0 ? (
-                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No re-visits pending.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No re-visits pending.</TableCell></TableRow>
                     ) : (
                       revisitOrders.map(o => (
                         <TableRow key={o.id} className="text-sm">
-                          <TableCell className="font-medium max-w-[180px] truncate">
-                            {o.lead?.client_name || "Unknown"}
-                            <Badge variant="outline" className="ml-1 text-[10px] bg-accent/10 text-accent border-accent/20">
-                              {o.lead?.visit_count || 0} {(o.lead?.visit_count || 0) === 1 ? "visit" : "visits"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{o.lead?.purchase_manager_name || "—"}</TableCell>
+                          <TableCell className="font-medium max-w-[180px] truncate">{o.lead?.client_name || "Unknown"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{o.lead?.visit_count || 0}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{o.lead?.created_by || "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{o.visit_date ? format(new Date(o.visit_date), "dd MMM") : "—"}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{o.lead?.created_by || "—"}</TableCell>
                           <TableCell>
                             <div className="flex gap-1 flex-wrap">
                               <Button size="sm" className="text-xs h-7" onClick={() => openLogVisit(o.lead_id, o.id)}>Log Visit</Button>
+                              <Button size="sm" variant="outline" className="text-xs h-7 border-warning/40 text-warning hover:bg-warning/10" onClick={() => openReassign(o.lead_id)}>Re-assign</Button>
                               <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => {
                                 setDropLeadId(o.lead_id);
                                 setDropOrderId(o.id);
@@ -546,23 +605,20 @@ export default function SampleOrdersPage() {
                     <TableRow>
                       <TableHead className="text-xs">Client Name</TableHead>
                       <TableHead className="text-xs">Visits</TableHead>
+                      <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs">Reason</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Date</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {droppedOrders.length === 0 ? (
-                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No dropped orders.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No dropped orders.</TableCell></TableRow>
                     ) : (
                       droppedOrders.map(o => (
                         <TableRow key={o.id} className="text-sm">
-                          <TableCell className="font-medium">
-                            {o.lead?.client_name || "Unknown"}
-                            <Badge variant="outline" className="ml-1 text-[10px] bg-accent/10 text-accent border-accent/20">
-                              {o.lead?.visit_count || 0} {(o.lead?.visit_count || 0) === 1 ? "visit" : "visits"}
-                            </Badge>
-                          </TableCell>
+                          <TableCell className="font-medium">{o.lead?.client_name || "Unknown"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{o.lead?.visit_count || 0}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{o.lead?.created_by || "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{o.remarks || "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{format(new Date(o.updated_at), "dd MMM")}</TableCell>
                         </TableRow>
@@ -575,7 +631,6 @@ export default function SampleOrdersPage() {
           </Card>
         </TabsContent>
       </Tabs>
-
       {/* Log Visit Dialog */}
       <Dialog open={logVisitOpen} onOpenChange={open => { if (!open) { setLogVisitOpen(false); resetForm(); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -761,6 +816,70 @@ export default function SampleOrdersPage() {
             <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
             <Button size="sm" variant="destructive" onClick={handleNotInterested} disabled={!dropReason}>Confirm</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Re-assign Dialog */}
+      <Dialog open={reassignOpen} onOpenChange={open => { if (!open) setReassignOpen(false); }}>
+        <DialogContent className="max-w-sm">
+          {reassignStep === 1 ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-base">Re-assign Lead</DialogTitle>
+              </DialogHeader>
+              <RadioGroup value={reassignOption} onValueChange={v => setReassignOption(v as any)} className="space-y-3 py-2">
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="call" id="s3-reassign-call" />
+                  <Label htmlFor="s3-reassign-call" className="text-sm cursor-pointer">Re-assign: Call</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="visit" id="s3-reassign-visit" />
+                  <Label htmlFor="s3-reassign-visit" className="text-sm cursor-pointer">Re-assign: Visit</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="unassign" id="s3-reassign-unassign" />
+                  <Label htmlFor="s3-reassign-unassign" className="text-sm cursor-pointer text-destructive">Unassign</Label>
+                </div>
+              </RadioGroup>
+              <DialogFooter>
+                <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+                {reassignOption === "unassign" ? (
+                  <Button size="sm" variant="destructive" onClick={handleConfirmReassign}>Unassign</Button>
+                ) : (
+                  <Button size="sm" onClick={() => setReassignStep(2)}>Next</Button>
+                )}
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-base">Re-assign To</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <Input placeholder="Search users..." value={reassignUserSearch} onChange={e => setReassignUserSearch(e.target.value)} className="h-8 text-xs" />
+                <div className="max-h-48 overflow-y-auto border rounded-md">
+                  {filteredReassignUsers.length === 0 ? (
+                    <p className="p-3 text-xs text-muted-foreground text-center">No users found</p>
+                  ) : (
+                    filteredReassignUsers.map(u => (
+                      <button
+                        key={u.email}
+                        className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors border-b last:border-b-0 ${reassignTo === u.email ? "bg-primary/10 text-primary" : ""}`}
+                        onClick={() => setReassignTo(u.email!)}
+                      >
+                        <span className="font-medium">{u.full_name || u.email}</span>
+                        {u.full_name && <span className="text-muted-foreground ml-2">{u.email}</span>}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" size="sm" onClick={() => setReassignStep(1)}>Back</Button>
+                <Button size="sm" onClick={handleConfirmReassign} disabled={!reassignTo}>Re-assign</Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -33,13 +33,13 @@ const tagColors: Record<string, string> = {
   Qualified: "bg-success/10 text-success border-success/20",
   Rescheduled: "bg-warning/10 text-warning border-warning/20",
   Dropped: "bg-destructive/10 text-destructive border-destructive/20",
+  Unassigned: "bg-muted text-muted-foreground border-border",
 };
 
-const tagOptions = ["New", "In Progress", "Qualified", "Rescheduled", "Dropped"];
+const tagOptions = ["New", "In Progress", "Qualified", "Rescheduled", "Dropped", "Unassigned"];
 const cuisineTypes = ["Indian", "Continental", "Pan-Asian", "Cafe", "Cloud Kitchen", "Multi-cuisine"];
 const sourceTypes = ["Google Maps", "Swiggy", "Zomato", "Event", "Referral", "Field"];
 
-// CSV schema: column names must match exactly. Required: pincode, locality, restaurant_name
 const CSV_REQUIRED_COLUMNS = ["pincode", "locality", "restaurant_name"];
 const CSV_OPTIONAL_COLUMNS = ["location", "source", "cuisine_type", "tag", "recall_date"];
 const CSV_ALL_COLUMNS = [...CSV_REQUIRED_COLUMNS, ...CSV_OPTIONAL_COLUMNS];
@@ -62,6 +62,14 @@ export default function ProspectsPage() {
   const [assignTo, setAssignTo] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [users, setUsers] = useState<{ email: string; full_name: string | null }[]>([]);
+
+  // Reassign state
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassignProspectId, setReassignProspectId] = useState<string | null>(null);
+  const [reassignOption, setReassignOption] = useState<"call" | "visit" | "unassign">("call");
+  const [reassignStep, setReassignStep] = useState<1 | 2>(1);
+  const [reassignTo, setReassignTo] = useState("");
+  const [reassignUserSearch, setReassignUserSearch] = useState("");
 
   useEffect(() => {
     supabase.from("profiles").select("email, full_name").then(({ data }) => {
@@ -112,9 +120,7 @@ export default function ProspectsPage() {
         continue;
       }
       valid.push({
-        pincode,
-        locality,
-        restaurant_name,
+        pincode, locality, restaurant_name,
         location: (row.location as string)?.trim() || null,
         source: (row.source as string)?.trim() && sourceTypes.includes((row.source as string).trim()) ? (row.source as string).trim() : null,
         cuisine_type: (row.cuisine_type as string)?.trim() && cuisineTypes.includes((row.cuisine_type as string).trim()) ? (row.cuisine_type as string).trim() : null,
@@ -137,11 +143,7 @@ export default function ProspectsPage() {
         toast({ title: "No valid rows", description: errors[0] || "Check CSV format", variant: "destructive" });
         return;
       }
-      const toInsert = valid.map(row => ({
-        ...row,
-        created_by: user?.email || null,
-        status: "available",
-      }));
+      const toInsert = valid.map(row => ({ ...row, created_by: user?.email || null, status: "available" }));
       const { success, failed } = await addProspectsBulk(toInsert as Parameters<typeof addProspectsBulk>[0]);
       if (failed > 0) toast({ title: `${failed} row(s) failed`, variant: "destructive" });
       if (errors.length > 0) toast({ title: "Some rows skipped", description: errors.slice(0, 3).join("; "), variant: "default" });
@@ -154,7 +156,6 @@ export default function ProspectsPage() {
 
   const localities = useMemo(() => [...new Set(prospects.map(p => p.locality))].filter(Boolean).sort(), [prospects]);
 
-  // Helper to get lead remarks for a prospect
   const getLeadRemarks = (prospectId: string) => {
     const lead = leads.find(l => l.prospect_id === prospectId);
     return lead?.remarks || null;
@@ -203,15 +204,10 @@ export default function ProspectsPage() {
   const handleAdd = async () => {
     if (!form.pincode || !form.restaurant_name || !form.locality) return;
     const ok = await addProspect({
-      pincode: form.pincode,
-      locality: form.locality,
-      restaurant_name: form.restaurant_name,
-      location: form.location || null,
-      source: form.source || null,
-      cuisine_type: form.cuisine_type || null,
-      tag: "New",
-      created_by: user?.email || null,
-      status: "available",
+      pincode: form.pincode, locality: form.locality,
+      restaurant_name: form.restaurant_name, location: form.location || null,
+      source: form.source || null, cuisine_type: form.cuisine_type || null,
+      tag: "New", created_by: user?.email || null, status: "available",
     });
     if (ok) {
       setForm({ pincode: "", locality: "", restaurant_name: "", location: "", source: "", cuisine_type: "" });
@@ -255,10 +251,38 @@ export default function ProspectsPage() {
     setSelectedIds(new Set());
   };
 
+  const openReassignDialog = (prospectId: string) => {
+    setReassignProspectId(prospectId);
+    setReassignOption("call");
+    setReassignStep(1);
+    setReassignTo("");
+    setReassignUserSearch("");
+    setReassignOpen(true);
+  };
+
+  const handleConfirmReassign = async () => {
+    if (!reassignProspectId) return;
+    if (reassignOption === "unassign") {
+      await updateProspect(reassignProspectId, { mapped_to: null as any, tag: "Unassigned" });
+      toast({ title: "Prospect unassigned" });
+      setReassignOpen(false);
+    } else {
+      if (!reassignTo) return;
+      await updateProspect(reassignProspectId, { status: "assigned", mapped_to: reassignTo, tag: "In Progress" });
+      toast({ title: "Prospect re-assigned successfully" });
+      setReassignOpen(false);
+    }
+  };
+
   const filteredUsers = useMemo(() => {
     const s = userSearch.toLowerCase();
     return users.filter(u => !s || (u.full_name || "").toLowerCase().includes(s) || (u.email || "").toLowerCase().includes(s));
   }, [users, userSearch]);
+
+  const filteredReassignUsers = useMemo(() => {
+    const s = reassignUserSearch.toLowerCase();
+    return users.filter(u => !s || (u.full_name || "").toLowerCase().includes(s) || (u.email || "").toLowerCase().includes(s));
+  }, [users, reassignUserSearch]);
 
   return (
     <div className="space-y-4">
@@ -314,25 +338,12 @@ export default function ProspectsPage() {
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-                <Button size="sm" onClick={handleAdd} disabled={!form.pincode || !form.restaurant_name || !form.locality}>
-                  Save Prospect
-                </Button>
+                <Button size="sm" onClick={handleAdd} disabled={!form.pincode || !form.restaurant_name || !form.locality}>Save Prospect</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <input
-            ref={csvInputRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={handleCsvUpload}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={csvUploading}
-            onClick={() => csvInputRef.current?.click()}
-          >
+          <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvUpload} />
+          <Button variant="outline" size="sm" disabled={csvUploading} onClick={() => csvInputRef.current?.click()}>
             <Upload className="w-4 h-4 mr-1" /> {csvUploading ? "Uploading..." : "CSV Upload"}
           </Button>
           <Button variant="ghost" size="sm" onClick={downloadCsvTemplate} title="Download CSV template with schema">
@@ -378,7 +389,7 @@ export default function ProspectsPage() {
           )}
         </div>
 
-        {/* Fresh Prospects Table - Location column removed */}
+        {/* Fresh Prospects Table */}
         <TabsContent value="fresh" className="mt-3">
           <Card>
             <CardContent className="p-0">
@@ -393,7 +404,7 @@ export default function ProspectsPage() {
                       <TableHead className="text-xs">Locality</TableHead>
                       <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs">Tag</TableHead>
-                      <TableHead className="text-xs w-24">Assign</TableHead>
+                      <TableHead className="text-xs w-28">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -402,24 +413,41 @@ export default function ProspectsPage() {
                     ) : freshProspects.length === 0 ? (
                       <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No fresh prospects found.</TableCell></TableRow>
                     ) : (
-                      freshProspects.map(p => (
-                        <TableRow key={p.id} className="text-sm">
-                          <TableCell><Checkbox checked={selectedIds.has(p.id)} onCheckedChange={() => toggleSelect(p.id)} /></TableCell>
-                          <TableCell className="font-medium max-w-[200px] truncate">{p.restaurant_name}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {(p.tag || "New") === "New" ? "—" : (p.mapped_to || "—")}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={`text-[10px] ${tagColors[p.tag || "New"] || tagColors["New"]}`}>
-                              {p.tag || "New"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openAssignDialog(p.id)}>Assign</Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                      freshProspects.map(p => {
+                        const tag = p.tag || "New";
+                        const isInProgress = tag === "In Progress" || tag === "Rescheduled";
+                        return (
+                          <TableRow key={p.id} className="text-sm">
+                            <TableCell><Checkbox checked={selectedIds.has(p.id)} onCheckedChange={() => toggleSelect(p.id)} /></TableCell>
+                            <TableCell className="font-medium max-w-[200px] truncate">{p.restaurant_name}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {tag === "New" || tag === "Unassigned" ? "—" : (p.mapped_to || "—")}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={`text-[10px] ${tagColors[tag] || tagColors["New"]}`}>
+                                {tag}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {isInProgress ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-xs h-7 border-warning/40 text-warning hover:bg-warning/10"
+                                  onClick={() => openReassignDialog(p.id)}
+                                >
+                                  Re-assign
+                                </Button>
+                              ) : (
+                                <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openAssignDialog(p.id)}>
+                                  Assign
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -428,7 +456,7 @@ export default function ProspectsPage() {
           </Card>
         </TabsContent>
 
-        {/* Converted Tab - Location column removed */}
+        {/* Converted Tab */}
         <TabsContent value="converted" className="mt-3">
           <Card>
             <CardContent className="p-0">
@@ -466,7 +494,7 @@ export default function ProspectsPage() {
           </Card>
         </TabsContent>
 
-        {/* Drop-outs Tab - Location removed, Remarks added */}
+        {/* Drop-outs Tab */}
         <TabsContent value="dropouts" className="mt-3">
           <Card>
             <CardContent className="p-0">
@@ -509,7 +537,7 @@ export default function ProspectsPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Assignment Dialog - 2 screens */}
+      {/* Assignment Dialog */}
       <Dialog open={assignOpen} onOpenChange={open => { if (!open) setAssignOpen(false); }}>
         <DialogContent className="max-w-sm">
           {assignStep === 1 ? (
@@ -560,6 +588,74 @@ export default function ProspectsPage() {
               <DialogFooter>
                 <Button variant="outline" size="sm" onClick={() => setAssignStep(1)}>Back</Button>
                 <Button size="sm" onClick={handleConfirmAssign} disabled={!assignTo}>Assign</Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Re-assign Dialog */}
+      <Dialog open={reassignOpen} onOpenChange={open => { if (!open) setReassignOpen(false); }}>
+        <DialogContent className="max-w-sm">
+          {reassignStep === 1 ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-base">Re-assign Prospect</DialogTitle>
+                <p className="text-xs text-muted-foreground">Select what you want to do</p>
+              </DialogHeader>
+              <RadioGroup value={reassignOption} onValueChange={v => setReassignOption(v as any)} className="space-y-3 py-2">
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="call" id="reassign-call" />
+                  <Label htmlFor="reassign-call" className="text-sm cursor-pointer">Re-assign: Call</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="visit" id="reassign-visit" />
+                  <Label htmlFor="reassign-visit" className="text-sm cursor-pointer">Re-assign: Visit</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="unassign" id="reassign-unassign" />
+                  <Label htmlFor="reassign-unassign" className="text-sm cursor-pointer text-destructive">Unassign</Label>
+                </div>
+              </RadioGroup>
+              <DialogFooter>
+                <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+                {reassignOption === "unassign" ? (
+                  <Button size="sm" variant="destructive" onClick={handleConfirmReassign}>Unassign</Button>
+                ) : (
+                  <Button size="sm" onClick={() => setReassignStep(2)}>Next</Button>
+                )}
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-base">Re-assign To</DialogTitle>
+                <p className="text-xs text-muted-foreground capitalize">{reassignOption} assignment</p>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <Input placeholder="Search users..." value={reassignUserSearch} onChange={e => setReassignUserSearch(e.target.value)} className="h-8 text-xs" />
+                <div className="max-h-48 overflow-y-auto border rounded-md">
+                  {filteredReassignUsers.length === 0 ? (
+                    <p className="p-3 text-xs text-muted-foreground text-center">No users found</p>
+                  ) : (
+                    filteredReassignUsers.map(u => (
+                      <button
+                        key={u.email}
+                        className={cn("w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors border-b last:border-b-0",
+                          reassignTo === u.email && "bg-primary/10 text-primary"
+                        )}
+                        onClick={() => setReassignTo(u.email!)}
+                      >
+                        <span className="font-medium">{u.full_name || u.email}</span>
+                        {u.full_name && <span className="text-muted-foreground ml-2">{u.email}</span>}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" size="sm" onClick={() => setReassignStep(1)}>Back</Button>
+                <Button size="sm" onClick={handleConfirmReassign} disabled={!reassignTo}>Re-assign</Button>
               </DialogFooter>
             </>
           )}
