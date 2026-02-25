@@ -290,11 +290,32 @@ export default function LeadsPage() {
     };
   };
 
+  const syncAppointment = async (leadId: string, clientName: string, appointmentDate: string | null, appointmentTime: string | null, apptType = "Call") => {
+    if (!appointmentDate) return;
+    const { data: profile } = await supabase.from("profiles").select("email").eq("user_id", user?.id || "").maybeSingle();
+    await supabase.from("appointments").insert({
+      restaurant_name: clientName,
+      scheduled_date: appointmentDate,
+      scheduled_time: appointmentTime || null,
+      appointment_type: apptType,
+      entity_id: leadId,
+      entity_type: "lead",
+      assigned_to: profile?.email || null,
+      status: "scheduled",
+    });
+  };
+
   const handleSaveLead = async () => {
     if (!form.client_name || !form.pincode) return;
-    const ok = await addLead({ ...buildLeadPayload(), status: "qualified" } as any);
+    const payload = { ...buildLeadPayload(), status: "qualified" } as any;
+    const ok = await addLead(payload);
     if (ok) {
       if (createLeadProspectId) await updateProspect(createLeadProspectId, { tag: "Qualified" });
+      // Sync appointment to calendar
+      if (payload.appointment_date) {
+        const { data: newLead } = await supabase.from("leads").select("id").eq("client_name", payload.client_name).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (newLead?.id) await syncAppointment(newLead.id, payload.client_name, payload.appointment_date, payload.appointment_time);
+      }
       toast({ title: "Lead saved — marked as Qualified" });
       resetForm();
       setCreateLeadOpen(false);
@@ -305,17 +326,24 @@ export default function LeadsPage() {
 
   const handleSaveIncomplete = async () => {
     if (!form.client_name || !form.pincode) return;
-    const remarksSuffix = revisitDate ? `\n[Re-visit: ${format(revisitDate, "dd MMM yyyy")}${revisitTime ? " " + revisitTime : ""}]` : "";
-    const ok = await addLead({
+    const apptDate = revisitDate ? format(revisitDate, "yyyy-MM-dd") : null;
+    const remarksSuffix = apptDate ? `\n[Re-visit: ${format(revisitDate!, "dd MMM yyyy")}${revisitTime ? " " + revisitTime : ""}]` : "";
+    const payload = {
       ...buildLeadPayload({
-        appointment_date: revisitDate ? format(revisitDate, "yyyy-MM-dd") : null,
+        appointment_date: apptDate,
         appointment_time: revisitTime || null,
         remarks: (form.remarks || "") + remarksSuffix,
       }),
       status: "in_progress",
-    } as any);
+    } as any;
+    const ok = await addLead(payload);
     if (ok) {
       if (createLeadProspectId) await updateProspect(createLeadProspectId, { tag: "In Progress" });
+      // Sync revisit appointment to calendar
+      if (apptDate) {
+        const { data: newLead } = await supabase.from("leads").select("id").eq("client_name", payload.client_name).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (newLead?.id) await syncAppointment(newLead.id, payload.client_name, apptDate, revisitTime || null, "Visit");
+      }
       toast({ title: "Saved as incomplete — re-visit scheduled" });
       resetForm();
       setCreateLeadOpen(false);

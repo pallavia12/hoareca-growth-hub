@@ -102,12 +102,28 @@ const Dashboard = () => {
       }
       setAgreements(filteredAgreements);
 
-      // Appointments for the user
+      // Appointments for the user — combine appointments table + leads with appointment_date
       const { data: profile } = await supabase.from("profiles").select("email").eq("user_id", user?.id || "").maybeSingle();
+      let allAppts: any[] = [];
       if (profile?.email) {
         const { data: apptData } = await supabase.from("appointments").select("*").eq("assigned_to", profile.email).order("scheduled_date");
-        setAppointments(apptData || []);
+        allAppts = apptData || [];
       }
+      // Also synthesize from leads with appointment_date (for leads saved before appointment sync)
+      const leadsWithAppt = (lData || []).filter((l: any) => l.appointment_date);
+      const existingEntityIds = new Set(allAppts.map((a: any) => a.entity_id));
+      const synthetic = leadsWithAppt
+        .filter((l: any) => !existingEntityIds.has(l.id))
+        .map((l: any) => ({
+          id: `synth-${l.id}`,
+          restaurant_name: l.client_name,
+          scheduled_date: l.appointment_date,
+          scheduled_time: l.appointment_time || null,
+          appointment_type: "Call",
+          entity_id: l.id,
+          entity_type: "lead",
+        }));
+      setAppointments([...allAppts, ...synthetic]);
 
       setLoading(false);
     };
