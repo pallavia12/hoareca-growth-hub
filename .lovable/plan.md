@@ -1,48 +1,68 @@
 
-## Changes: Log Visit Color + Qty/Ripeness UI Improvement
+## Redesign: Qty + Ripeness as a Single Combined Column
 
-### 1. Log Visit Color — `#005c00`
+### The Design Problem
 
-All "Log Visit" buttons currently use `bg-success` (the CSS variable `--success: 122 39% 49%`). The user wants `#005c00` (a darker forest green).
+Splitting related data (Qty and Ripeness) into two separate columns creates a **visual association problem**:
+- The user must mentally scan across the row to connect Qty ① with Ripeness ①
+- On mobile, this is even harder — columns are narrow, multi-line cells lose alignment
+- No amount of pill styling fixes a fundamentally broken information architecture
 
-**Approach**: Rather than using arbitrary inline styles scattered across 3 files, update the `--success` CSS variable in `src/index.css` to the equivalent HSL of `#005c00`:
-- `#005c00` → HSL approximately `120, 100%, 18%`
+### Design Principle Applied: **Co-locate related data**
 
-This means updating one line in `src/index.css` and all `bg-success` buttons (Log Visit across all Steps 2–4) will automatically pick it up.
+Qty and Ripeness Stage are properties of the **same SKU combo** — they belong together. The correct pattern is a single column ("Order Details") where each combo is one compact, self-contained row item.
 
-> Note: The sidebar background currently also uses a similar green. Only the `--success` token will be changed (not the sidebar tokens), so there should be no side effects on the sidebar.
+### New Layout: Single "Order Details" Column
 
----
+Replace the two columns (Qty Units + Ripeness Stage) with one column **"Order Details"** that shows each combo as a horizontal pair:
 
-### 2. Qty (Units) + Ripeness Stage — Improved UI in Step 4 Pending Orders
-
-**Problem**: The two columns currently list qty values and ripeness values independently with only `space-y-0.5` spacing. When multiple combos exist (e.g., 3 entries), there's no visual demarcation between rows — they blur together.
-
-**Solution**: Render each combo as a compact numbered **pill/tag row** inside a single merged approach — but since the user asked to keep two columns (Qty and Ripeness), we'll use **indexed mini-badges** per combo that clearly delineate each row:
-
-Each combo will be rendered as a small badge like:
 ```
-① 10     ① Stage 3
-② 5      ② Stage 1
-③ 8      ③ Stage 5
+Order Details
+┌─────────────────────────────┐
+│  10 units  ·  Stage 3       │
+│   5 units  ·  Stage 1       │
+│   8 units  ·  Stage 5       │
+└─────────────────────────────┘
 ```
 
-Using small numbered circles (1, 2, 3...) as inline prefixes in each row, with a subtle `border-b` separator between combos, or light alternating row styling.
+Each combo row:
+- Left: **bold qty** (e.g. `10 units`) in a small green-tinted badge
+- Separator: a subtle `·` dot
+- Right: ripeness stage in a neutral muted badge
+- The row itself has a clean `border-b border-muted/60 last:border-0 py-1.5` separator
+- No alternating background — instead, a simple horizontal divider line between combos
 
-**Technical implementation**:
-- Wrap each combo item in a `div` with `border-b border-dashed border-muted last:border-0 py-0.5` so each line is visually separated.
-- Add a small inline number badge `(i+1)` prefix in `text-[10px] bg-muted rounded-full w-4 h-4` to index the combo.
-- Keep both columns in sync — the index number acts as the visual link between Qty and Ripeness cells.
+This approach:
+1. **Keeps related data together** — no cross-column scanning
+2. **Works perfectly on mobile** — one column, naturally wraps
+3. **Is visually clean** — uses line separators (not alternating backgrounds) which is a more professional design pattern
+4. **Reduces table width** — one fewer column, more room for actions
 
-**Mobile readability**: The columns will use `min-w-[60px]` to prevent collapsing, and the table already has `overflow-x-auto`.
+### Technical Implementation
 
----
+**File**: `src/pages/AgreementsPage.tsx`
 
-### Files to Edit
+Changes:
+1. Remove the two `<TableHead>` entries for "Qty (Units)" and "Ripeness Stage"
+2. Add one `<TableHead>` for "Order Details"
+3. Replace the two `<TableCell>` blocks with one cell rendering each combo as `qty · ripeness` on its own line
+4. Update `colSpan` values in empty/loading rows accordingly
 
-| File | Change |
-|---|---|
-| `src/index.css` | Update `--success` HSL to match `#005c00` |
-| `src/pages/AgreementsPage.tsx` | Improve Qty + Ripeness cell rendering in Pending Orders table |
+**Rendering each combo:**
+```tsx
+<div className="flex flex-col divide-y divide-muted/60">
+  {combos.map((c, i) => (
+    <div key={i} className="flex items-center gap-2 py-1.5 first:pt-0 last:pb-0">
+      <span className="text-[11px] font-semibold bg-green-50 text-green-800 border border-green-200 px-1.5 py-0.5 rounded">
+        {c.qty} units
+      </span>
+      <span className="text-muted-foreground text-[10px]">·</span>
+      <span className="text-[11px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+        {c.ripeness}
+      </span>
+    </div>
+  ))}
+</div>
+```
 
-No database changes required.
+This gives a clean, scannable layout where each combo line is self-contained and readable even in a narrow column.
