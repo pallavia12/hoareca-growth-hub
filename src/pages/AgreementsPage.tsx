@@ -28,6 +28,7 @@ import { useLeads } from "@/hooks/useLeads";
 import { useToast } from "@/hooks/use-toast";
 import {
   Search, CalendarIcon, Send, RotateCcw, XCircle, AlertTriangle, Truck, Clock,
+  UserCheck, RefreshCw,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -42,16 +43,26 @@ const esignBadgeClass: Record<string, string> = {
 
 interface FormErrors { [key: string]: string; }
 
-// Helper to extract specs from remarks
-const extractSpecs = (remarks: string | null) => {
-  if (!remarks) return { pcsPerBox: "—", ripeness: "—", numBoxes: "—" };
-  const countMatch = remarks.match(/Count\/box:\s*(\d+)/);
-  const ripenessMatch = remarks.match(/Ripeness:\s*([^|]+)/);
-  return {
-    pcsPerBox: countMatch ? countMatch[1] : "—",
-    ripeness: ripenessMatch ? ripenessMatch[1].trim() : "—",
-    numBoxes: "—", // derived from sample_qty_units
-  };
+// Helper to extract SKU qty+ripeness combos from remarks (from Step 3 booking)
+// Format stored: "Qty: X, Ripeness: Y | Qty: X2, Ripeness: Y2"
+const extractSkuCombos = (remarks: string | null): Array<{ qty: string; ripeness: string }> => {
+  if (!remarks) return [];
+  // Try new format first: "Qty: X, Ripeness: Y | ..."
+  const skuSection = remarks.match(/\[SKU Specs\]\s*([^\n]+)/);
+  if (skuSection) {
+    const parts = skuSection[1].split("|").map(p => p.trim()).filter(Boolean);
+    const combos = parts.map(part => {
+      const qtyMatch = part.match(/Qty:\s*([^,]+)/);
+      const ripMatch = part.match(/Ripeness:\s*(.+)/);
+      return {
+        qty: qtyMatch ? qtyMatch[1].trim() : "—",
+        ripeness: ripMatch ? ripMatch[1].trim() : "—",
+      };
+    }).filter(c => c.qty !== "—" || c.ripeness !== "—");
+    if (combos.length > 0) return combos.slice(0, 5);
+  }
+  // Fallback: show total qty
+  return [];
 };
 
 export default function AgreementsPage() {
@@ -451,16 +462,15 @@ export default function AgreementsPage() {
 
   const FieldError = ({ msg }: { msg?: string }) => msg ? <p className="text-xs text-destructive mt-0.5">{msg}</p> : null;
 
-  // Get order specs for Send Agreement dialog summary
+  // Get order summary for Send Agreement dialog
   const getOrderSummary = (orderId: string) => {
     const order = orders.find(o => o.id === orderId);
     if (!order) return null;
-    const specs = extractSpecs(order.remarks);
+    const combos = extractSkuCombos(order.remarks);
     return {
       deliveryDate: order.delivery_date ? format(new Date(order.delivery_date), "dd MMM yyyy") : "—",
-      pcsPerBox: specs.pcsPerBox,
-      ripeness: specs.ripeness,
-      numBoxes: order.sample_qty_units ? String(order.sample_qty_units) : "—",
+      combos,
+      totalQty: order.sample_qty_units ? String(order.sample_qty_units) : "—",
     };
   };
 
@@ -543,34 +553,48 @@ export default function AgreementsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">Lead Name</TableHead>
+                      <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs">Delivery Date</TableHead>
-                      <TableHead className="text-xs">Pcs per Box</TableHead>
-                      <TableHead className="text-xs">Ripeness</TableHead>
-                      <TableHead className="text-xs">No of Boxes</TableHead>
+                      <TableHead className="text-xs">Qty (units)</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loading ? (
-                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                     ) : pendingOrders.length === 0 ? (
-                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No pending orders.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No pending orders.</TableCell></TableRow>
                     ) : (
                       pendingOrders.map(o => {
-                        const specs = extractSpecs(o.remarks);
+                        const combos = extractSkuCombos(o.remarks);
                         return (
                           <TableRow key={o.id} className="text-sm">
                             <TableCell className="font-medium max-w-[180px] truncate">{o.lead?.client_name || "Unknown"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{o.lead?.created_by || "—"}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">
                               {o.delivery_date ? format(new Date(o.delivery_date), "dd MMM yyyy") : "—"}
                             </TableCell>
-                            <TableCell className="text-xs">{specs.pcsPerBox}</TableCell>
-                            <TableCell className="text-xs">{specs.ripeness}</TableCell>
-                            <TableCell className="text-xs">{o.sample_qty_units || "—"}</TableCell>
+                            <TableCell className="text-xs">
+                              {combos.length > 0 ? (
+                                <div className="space-y-0.5">
+                                  {combos.map((c, i) => (
+                                    <div key={i} className="text-[11px]">
+                                      <span className="font-medium">{c.qty}</span>
+                                      <span className="text-muted-foreground ml-1">({c.ripeness})</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">{o.sample_qty_units || "—"}</span>
+                              )}
+                            </TableCell>
                             <TableCell>
                               <div className="flex gap-1 flex-wrap">
-                                <Button size="sm" className="text-xs h-7" onClick={() => openDeliverDialog(o.id)}>
-                                  <Truck className="w-3 h-3 mr-1" /> Deliver
+                                <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openDeliverDialog(o.id)}>
+                                  <Truck className="w-3 h-3 mr-1" /> Deliver Order
+                                </Button>
+                                <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(o.lead?.id || "")}>
+                                  <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
                                 </Button>
                                 <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openRescheduleDialog(o.id)}>
                                   <Clock className="w-3 h-3 mr-1" /> Reschedule
@@ -598,18 +622,20 @@ export default function AgreementsPage() {
                     <TableRow>
                       <TableHead className="text-xs">Lead Name</TableHead>
                       <TableHead className="text-xs">Visits</TableHead>
+                      <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs hidden sm:table-cell">Sample Delivered</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {deliveredItems.length === 0 ? (
-                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No delivered orders pending feedback.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No delivered orders pending feedback.</TableCell></TableRow>
                     ) : (
                       deliveredItems.map(item => (
                         <TableRow key={item.orderId} className="text-sm">
                           <TableCell className="font-medium max-w-[180px] truncate">{item.leadName}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{item.lead?.visit_count || 0}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{item.lead?.created_by || "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">
                             {item.deliveredDate ? format(new Date(item.deliveredDate), "dd MMM") : "—"}
                           </TableCell>
@@ -617,6 +643,9 @@ export default function AgreementsPage() {
                             <div className="flex gap-1 flex-wrap">
                               <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openSendAgreement(item.orderId, item.agreementId)}>
                                 <Send className="w-3 h-3 mr-1" /> Log Visit
+                              </Button>
+                              <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(item.lead?.id || "")}>
+                                <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
                               </Button>
                               <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => openNotInterested(item.orderId, item.agreementId)}>
                                 <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
@@ -669,7 +698,7 @@ export default function AgreementsPage() {
                                 </Button>
                                 {a.lead?.id && (
                                   <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(a.lead!.id)}>
-                                    Re-assign
+                                    <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
                                   </Button>
                                 )}
                                 <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => openNotInterested(a.sample_order_id, a.id)}>
@@ -743,8 +772,8 @@ export default function AgreementsPage() {
                       <TableHead className="text-xs">Lead Name</TableHead>
                       <TableHead className="text-xs">Total Visits</TableHead>
                       <TableHead className="text-xs">Assigned To</TableHead>
-                      <TableHead className="text-xs hidden sm:table-cell">Last Feedback</TableHead>
                       <TableHead className="text-xs">Reason</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Info</TableHead>
                       <TableHead className="text-xs hidden md:table-cell">Dropped</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -759,8 +788,8 @@ export default function AgreementsPage() {
                             <TableCell className="font-medium max-w-[180px] truncate">{a.lead?.client_name || "Unknown"}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">{a.lead?.visit_count || 0}</TableCell>
                             <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{a.lead?.created_by || "—"}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
                             <TableCell className="text-xs">{reason}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden sm:table-cell max-w-[160px] truncate">{finalRemarks}</TableCell>
                             <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{format(new Date(a.updated_at), "dd MMM")}</TableCell>
                           </TableRow>
                         );
@@ -845,9 +874,13 @@ export default function AgreementsPage() {
                   {summary && (
                     <>
                       <span><strong>Delivery Date:</strong> {summary.deliveryDate}</span>
-                      <span><strong>Pcs/Box:</strong> {summary.pcsPerBox}</span>
-                      <span><strong>Ripeness:</strong> {summary.ripeness}</span>
-                      <span><strong>No of Boxes:</strong> {summary.numBoxes}</span>
+                      <span><strong>Total Qty:</strong> {summary.totalQty} units</span>
+                      {summary.combos.length > 0 && (
+                        <span className="col-span-2">
+                          <strong>SKU Combos:</strong>{" "}
+                          {summary.combos.map((c, i) => `${c.qty} units (${c.ripeness})`).join(" · ")}
+                        </span>
+                      )}
                     </>
                   )}
                 </div>

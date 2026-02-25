@@ -26,7 +26,8 @@ import { useLeads } from "@/hooks/useLeads";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Search, CalendarIcon, Package, Eye, Clock, XCircle, RotateCcw, Plus, Trash2,
+  Search, CalendarIcon, Package, Clock, XCircle, RotateCcw, Plus, Trash2,
+  UserCheck, RefreshCw, CheckCircle2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -357,6 +358,13 @@ export default function SampleOrdersPage() {
     setDropRemarks("");
   };
 
+  const extractDropInfo = (remarks: string | null) => {
+    if (!remarks) return { reason: "—", info: "—" };
+    const match = remarks.match(/\[Dropped\]\s*([^:]+?)(?::\s*(.*?))?(?:\.\s*Total|$)/s);
+    if (match) return { reason: match[1].trim(), info: (match[2] || "").trim() || "—" };
+    return { reason: "—", info: remarks };
+  };
+
   const renderScheduledRow = (leadId: string, clientName: string, pmName: string | null, visitDate: string | null, assignedTo: string | null, orderId?: string) => (
     <TableRow key={orderId || leadId} className="text-sm">
       <TableCell className="font-medium max-w-[180px] truncate">{clientName}</TableCell>
@@ -365,15 +373,21 @@ export default function SampleOrdersPage() {
       <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{assignedTo || "—"}</TableCell>
       <TableCell>
         <div className="flex gap-1 flex-wrap">
-          <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openLogVisit(leadId, orderId)}>Log Visit</Button>
-          <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(leadId)}>Re-assign</Button>
+          <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openLogVisit(leadId, orderId)}>
+            <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
+          </Button>
+          <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(leadId)}>
+            <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
+          </Button>
           <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
             setDropLeadId(leadId);
             setDropOrderId(orderId || null);
             setDropReason("");
             setDropRemarks("");
             setDropOpen(true);
-          }}>Mark Dropout</Button>
+          }}>
+            <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
+          </Button>
         </div>
       </TableCell>
     </TableRow>
@@ -561,18 +575,23 @@ export default function SampleOrdersPage() {
                           <TableCell className="text-xs text-muted-foreground">{o.lead?.visit_count || 0}</TableCell>
                           <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{o.lead?.created_by || "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{o.visit_date ? format(new Date(o.visit_date), "dd MMM") : "—"}</TableCell>
-                          <TableCell>
+                           <TableCell>
                             <div className="flex gap-1 flex-wrap">
-                              <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openLogVisit(o.lead_id, o.id)}>Log Visit</Button>
-                              <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(o.lead_id)}>Re-assign</Button>
+                              <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openLogVisit(o.lead_id, o.id)}>
+                                <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
+                              </Button>
+                              <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(o.lead_id)}>
+                                <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
+                              </Button>
                               <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
                                 setDropLeadId(o.lead_id);
-
                                 setDropOrderId(o.id);
                                 setDropReason("");
                                 setDropRemarks("");
                                 setDropOpen(true);
-                              }}>Mark Dropout</Button>
+                              }}>
+                                <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
+                              </Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -597,22 +616,27 @@ export default function SampleOrdersPage() {
                       <TableHead className="text-xs">Visits</TableHead>
                       <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs">Reason</TableHead>
-                      <TableHead className="text-xs hidden sm:table-cell">Date</TableHead>
+                      <TableHead className="text-xs hidden sm:table-cell">Info</TableHead>
+                      <TableHead className="text-xs hidden md:table-cell">Date</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {droppedOrders.length === 0 ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No dropped orders.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No dropped orders.</TableCell></TableRow>
                     ) : (
-                      droppedOrders.map(o => (
-                        <TableRow key={o.id} className="text-sm">
-                          <TableCell className="font-medium">{o.lead?.client_name || "Unknown"}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{o.lead?.visit_count || 0}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{o.lead?.created_by || "—"}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{o.remarks || "—"}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{format(new Date(o.updated_at), "dd MMM")}</TableCell>
-                        </TableRow>
-                      ))
+                      droppedOrders.map(o => {
+                        const { reason, info } = extractDropInfo(o.remarks);
+                        return (
+                          <TableRow key={o.id} className="text-sm">
+                            <TableCell className="font-medium">{o.lead?.client_name || "Unknown"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{o.lead?.visit_count || 0}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{o.lead?.created_by || "—"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{reason}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden sm:table-cell max-w-[160px] truncate">{info}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{format(new Date(o.updated_at), "dd MMM")}</TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
