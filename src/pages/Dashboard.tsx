@@ -183,7 +183,32 @@ const Dashboard = () => {
     cursor = addDays(cursor, 1);
   }
 
-  const dayAppointments = appointments.filter((a) => a.scheduled_date === selectedDay);
+  const monday = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
+  const tuesday = format(addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), 1), "yyyy-MM-dd");
+
+  const hardcodedAppointments = [
+    // Monday
+    { id: "h1", restaurant_name: "The Avocado House", scheduled_date: monday, scheduled_time: "10:00", appointment_type: "Call", agent_name: "Priya Sharma" },
+    { id: "h2", restaurant_name: "Green Bowl Café", scheduled_date: monday, scheduled_time: "14:30", appointment_type: "Sample Delivery", agent_name: "Rahul Mehta" },
+    // Tuesday
+    { id: "h3", restaurant_name: "Zest Kitchen", scheduled_date: tuesday, scheduled_time: "09:00", appointment_type: "Call", agent_name: "Priya Sharma" },
+    { id: "h4", restaurant_name: "The Salad Story", scheduled_date: tuesday, scheduled_time: "10:30", appointment_type: "Call", agent_name: "Arjun Nair" },
+    { id: "h5", restaurant_name: "Cafe Verde", scheduled_date: tuesday, scheduled_time: null, appointment_type: "Call", agent_name: "Priya Sharma" },
+    { id: "h6", restaurant_name: "Urban Bites", scheduled_date: tuesday, scheduled_time: "12:00", appointment_type: "Call", agent_name: "Rahul Mehta" },
+    { id: "h7", restaurant_name: "Harvest Table", scheduled_date: tuesday, scheduled_time: "11:00", appointment_type: "Sample Delivery", agent_name: "Arjun Nair" },
+    { id: "h8", restaurant_name: "Mango Grove", scheduled_date: tuesday, scheduled_time: "13:30", appointment_type: "Sample Delivery", agent_name: "Priya Sharma" },
+    { id: "h9", restaurant_name: "Spice Route", scheduled_date: tuesday, scheduled_time: null, appointment_type: "Sample Delivery", agent_name: "Rahul Mehta" },
+    { id: "h10", restaurant_name: "Bistro 47", scheduled_date: tuesday, scheduled_time: "15:00", appointment_type: "Agreement", agent_name: "Arjun Nair" },
+    { id: "h11", restaurant_name: "The Fork Club", scheduled_date: tuesday, scheduled_time: "16:00", appointment_type: "Agreement", agent_name: "Priya Sharma" },
+    { id: "h12", restaurant_name: "Olive & Rye", scheduled_date: tuesday, scheduled_time: null, appointment_type: "Agreement", agent_name: "Rahul Mehta" },
+  ];
+
+  const mergedAppointments = [
+    ...appointments,
+    ...hardcodedAppointments.filter(h => !appointments.some((a) => a.scheduled_date === h.scheduled_date && a.restaurant_name === h.restaurant_name)),
+  ];
+
+  const dayAppointments = mergedAppointments.filter((a) => a.scheduled_date === selectedDay);
 
   return (
     <div className="space-y-6">
@@ -234,7 +259,7 @@ const Dashboard = () => {
               const dateStr = format(date, "yyyy-MM-dd");
               const isToday = dateStr === today;
               const isSelected = dateStr === selectedDay;
-              const dayAppts = appointments.filter((a) => a.scheduled_date === dateStr);
+              const dayAppts = mergedAppointments.filter((a) => a.scheduled_date === dateStr);
               return (
                 <button
                   key={i}
@@ -258,10 +283,15 @@ const Dashboard = () => {
           {dayAppointments.length > 0 ? (
             <div className="mt-3 space-y-2">
               {dayAppointments.map((a, idx) => (
-                <div key={idx} className="flex items-center gap-3 text-sm p-2 rounded-md bg-muted/50">
-                  <span className="font-mono text-xs text-muted-foreground w-16">{a.scheduled_time || "—"}</span>
-                  <span className="font-medium flex-1">{a.restaurant_name}</span>
-                  <Badge variant="outline" className={`text-xs ${typeColors[a.appointment_type] || ""}`}>{a.appointment_type}</Badge>
+                <div key={idx} className="flex flex-col gap-1 p-2.5 rounded-md bg-muted/50 border border-border/40">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-medium text-sm leading-tight flex-1">{a.restaurant_name}</span>
+                    <Badge variant="outline" className={`text-[10px] shrink-0 ${typeColors[a.appointment_type] || ""}`}>{a.appointment_type}</Badge>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    {a.scheduled_time && <span className="font-mono">{a.scheduled_time}</span>}
+                    {(a as any).agent_name && <span>· {(a as any).agent_name}</span>}
+                  </div>
                 </div>
               ))}
             </div>
