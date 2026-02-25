@@ -378,23 +378,18 @@ export default function LeadsPage() {
 
   const handleVerifyClick = () => {
     if (!canVerify) return;
-    setSelectedVerify("Verified");
-    setVerifyOpen(true);
-  };
-
-  const handleConfirmVerify = () => {
+    // Simulate API: if both GST and PAN provided → Verified, only one → Unverified, none → N/A
+    // For demo: toggle through states to simulate different API responses
+    const nextResult: "Verified" | "Unverified" | "Duplicate" =
+      !verifyResult ? "Verified" :
+      verifyResult === "Verified" ? "Unverified" :
+      verifyResult === "Unverified" ? "Duplicate" : "Verified";
     let note = "";
-    if (selectedVerify === "Verified") {
-      const contactDisplay = form.contact_number || "XXXXXXXXXX";
-      note = `Contact on record: ${contactDisplay}`;
-    } else if (selectedVerify === "Unverified") {
-      note = "Entered GST ID and PAN number are not linked";
-    } else if (selectedVerify === "Duplicate") {
-      note = "Duplicate entries found";
-    }
-    setVerifyResult(selectedVerify);
-    setForm(f => ({ ...f, verification_status: selectedVerify, verification_note: note }));
-    setVerifyOpen(false);
+    if (nextResult === "Verified") note = `Contact on record: ${form.contact_number || "N/A"}`;
+    else if (nextResult === "Unverified") note = "Entered GST ID and PAN number are not linked";
+    else note = "Duplicate entries found";
+    setVerifyResult(nextResult);
+    setForm(f => ({ ...f, verification_status: nextResult, verification_note: note }));
   };
 
   const handleDocUpload = async (file: File, type: "gst" | "pan") => {
@@ -418,19 +413,43 @@ export default function LeadsPage() {
 
   const loading = prospectsLoading || leadsLoading;
 
-  const renderVerificationBadge = () => {
+  const renderVerificationResult = () => {
     if (!verifyResult) return null;
-    const colors = verificationColors[verifyResult] || "";
-    const icons = {
-      Verified: <ShieldCheck className="w-3 h-3 mr-1" />,
-      Unverified: <ShieldAlert className="w-3 h-3 mr-1" />,
-      Duplicate: <ShieldX className="w-3 h-3 mr-1" />,
-    };
-    return (
-      <Badge variant="outline" className={`text-[11px] flex items-center ${colors}`}>
-        {icons[verifyResult]}{verifyResult}
-      </Badge>
-    );
+    if (verifyResult === "Verified") {
+      return (
+        <div className="mt-2 p-2.5 rounded-md bg-success/10 border border-success/20 space-y-0.5">
+          <div className="flex items-center gap-1.5 text-success text-xs font-semibold">
+            <ShieldCheck className="w-3.5 h-3.5" /> Verified
+          </div>
+          <p className="text-[11px] text-muted-foreground">Contact on record: <strong>{form.contact_number || "N/A"}</strong></p>
+        </div>
+      );
+    }
+    if (verifyResult === "Unverified") {
+      return (
+        <div className="mt-2 p-2.5 rounded-md bg-destructive/10 border border-destructive/20 space-y-0.5">
+          <div className="flex items-center gap-1.5 text-destructive text-xs font-semibold">
+            <ShieldAlert className="w-3.5 h-3.5" /> Unverified
+          </div>
+          <p className="text-[11px] text-muted-foreground">Entered GST ID and PAN number are not linked.</p>
+        </div>
+      );
+    }
+    if (verifyResult === "Duplicate") {
+      return (
+        <div className="mt-2 p-2.5 rounded-md bg-warning/10 border border-warning/20 space-y-0.5">
+          <div className="flex items-center gap-1.5 text-warning text-xs font-semibold">
+            <ShieldX className="w-3.5 h-3.5" /> Duplicate
+          </div>
+          <p className="text-[11px] text-muted-foreground font-medium">Existing records found:</p>
+          <div className="bg-background/60 rounded p-1.5 space-y-0.5">
+            <p className="text-[11px] font-mono">• LD-001 — Chai Point, Koramangala</p>
+            <p className="text-[11px] font-mono">• LD-002 — Chai Point, Indiranagar</p>
+          </div>
+        </div>
+      );
+    }
+    return null;
   };
 
   const renderKycSection = () => (
@@ -500,7 +519,7 @@ export default function LeadsPage() {
       </div>
 
       {/* Verify CTA */}
-      <div className="flex items-center gap-3 pt-1">
+      <div className="pt-1">
         <Button
           type="button"
           size="sm"
@@ -512,10 +531,7 @@ export default function LeadsPage() {
           <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
           Verify Identity
         </Button>
-        {renderVerificationBadge()}
-        {verifyResult && form.verification_note && (
-          <span className="text-[11px] text-muted-foreground truncate max-w-[160px]">{form.verification_note}</span>
-        )}
+        {renderVerificationResult()}
       </div>
     </div>
   );
@@ -945,52 +961,6 @@ export default function LeadsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Verify Identity Dialog */}
-      <Dialog open={verifyOpen} onOpenChange={setVerifyOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-base flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4" /> Identity Verification
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-1">
-            <p className="text-xs text-muted-foreground">Select verification result for this lead:</p>
-            <RadioGroup value={selectedVerify} onValueChange={v => setSelectedVerify(v as any)} className="space-y-3">
-              <div className="flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer hover:bg-muted/40" onClick={() => setSelectedVerify("Verified")}>
-                <RadioGroupItem value="Verified" id="v-verified" />
-                <div>
-                  <Label htmlFor="v-verified" className="text-sm font-medium cursor-pointer">✅ Verified</Label>
-                  <p className="text-[11px] text-muted-foreground">Contact on record: {form.contact_number || "N/A"}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer hover:bg-muted/40" onClick={() => setSelectedVerify("Unverified")}>
-                <RadioGroupItem value="Unverified" id="v-unverified" />
-                <div>
-                  <Label htmlFor="v-unverified" className="text-sm font-medium cursor-pointer">⚠️ Unverified</Label>
-                  <p className="text-[11px] text-muted-foreground">Entered GST ID and PAN number are not linked</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer hover:bg-muted/40" onClick={() => setSelectedVerify("Duplicate")}>
-                <RadioGroupItem value="Duplicate" id="v-duplicate" />
-                <div>
-                  <Label htmlFor="v-duplicate" className="text-sm font-medium cursor-pointer">🔁 Duplicate</Label>
-                  <div className="mt-1 space-y-1">
-                    <p className="text-[11px] text-muted-foreground font-medium">Existing records found:</p>
-                    <div className="bg-muted/50 rounded p-1.5 space-y-0.5">
-                      <p className="text-[11px] font-mono">• LD-001 — Chai Point, Koramangala</p>
-                      <p className="text-[11px] font-mono">• LD-002 — Chai Point, Indiranagar</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </RadioGroup>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" onClick={handleConfirmVerify}>Confirm</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

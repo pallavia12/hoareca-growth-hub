@@ -188,19 +188,19 @@ const Dashboard = () => {
 
   const hardcodedAppointments = [
     // Monday
-    { id: "h1", restaurant_name: "The Avocado House", scheduled_date: monday, scheduled_time: "10:00", appointment_type: "Call", agent_name: "Priya Sharma" },
-    { id: "h2", restaurant_name: "Green Bowl Café", scheduled_date: monday, scheduled_time: "14:30", appointment_type: "Sample Delivery", agent_name: "Rahul Mehta" },
+    { id: "h1", restaurant_name: "The Avocado House", locality: "Koramangala", scheduled_date: monday, scheduled_time: "10:00", appointment_type: "Call", agent_name: "Priya Sharma" },
+    { id: "h2", restaurant_name: "Green Bowl Café", locality: "Indiranagar", scheduled_date: monday, scheduled_time: "14:30", appointment_type: "Sample Delivery", agent_name: "Rahul Mehta" },
     // Tuesday
-    { id: "h3", restaurant_name: "Zest Kitchen", scheduled_date: tuesday, scheduled_time: "09:00", appointment_type: "Call", agent_name: "Priya Sharma" },
-    { id: "h4", restaurant_name: "The Salad Story", scheduled_date: tuesday, scheduled_time: "10:30", appointment_type: "Call", agent_name: "Arjun Nair" },
-    { id: "h5", restaurant_name: "Cafe Verde", scheduled_date: tuesday, scheduled_time: null, appointment_type: "Call", agent_name: "Priya Sharma" },
-    { id: "h6", restaurant_name: "Urban Bites", scheduled_date: tuesday, scheduled_time: "12:00", appointment_type: "Call", agent_name: "Rahul Mehta" },
-    { id: "h7", restaurant_name: "Harvest Table", scheduled_date: tuesday, scheduled_time: "11:00", appointment_type: "Sample Delivery", agent_name: "Arjun Nair" },
-    { id: "h8", restaurant_name: "Mango Grove", scheduled_date: tuesday, scheduled_time: "13:30", appointment_type: "Sample Delivery", agent_name: "Priya Sharma" },
-    { id: "h9", restaurant_name: "Spice Route", scheduled_date: tuesday, scheduled_time: null, appointment_type: "Sample Delivery", agent_name: "Rahul Mehta" },
-    { id: "h10", restaurant_name: "Bistro 47", scheduled_date: tuesday, scheduled_time: "15:00", appointment_type: "Agreement", agent_name: "Arjun Nair" },
-    { id: "h11", restaurant_name: "The Fork Club", scheduled_date: tuesday, scheduled_time: "16:00", appointment_type: "Agreement", agent_name: "Priya Sharma" },
-    { id: "h12", restaurant_name: "Olive & Rye", scheduled_date: tuesday, scheduled_time: null, appointment_type: "Agreement", agent_name: "Rahul Mehta" },
+    { id: "h3", restaurant_name: "Zest Kitchen", locality: "HSR Layout", scheduled_date: tuesday, scheduled_time: "09:00", appointment_type: "Call", agent_name: "Priya Sharma" },
+    { id: "h4", restaurant_name: "The Salad Story", locality: "Whitefield", scheduled_date: tuesday, scheduled_time: "10:30", appointment_type: "Call", agent_name: "Arjun Nair" },
+    { id: "h5", restaurant_name: "Cafe Verde", locality: "Koramangala", scheduled_date: tuesday, scheduled_time: null, appointment_type: "Call", agent_name: "Priya Sharma" },
+    { id: "h6", restaurant_name: "Urban Bites", locality: "Bellandur", scheduled_date: tuesday, scheduled_time: "12:00", appointment_type: "Call", agent_name: "Rahul Mehta" },
+    { id: "h7", restaurant_name: "Harvest Table", locality: "Indiranagar", scheduled_date: tuesday, scheduled_time: "11:00", appointment_type: "Sample Delivery", agent_name: "Arjun Nair" },
+    { id: "h8", restaurant_name: "Mango Grove", locality: "JP Nagar", scheduled_date: tuesday, scheduled_time: "13:30", appointment_type: "Sample Delivery", agent_name: "Priya Sharma" },
+    { id: "h9", restaurant_name: "Spice Route", locality: "MG Road", scheduled_date: tuesday, scheduled_time: null, appointment_type: "Sample Delivery", agent_name: "Rahul Mehta" },
+    { id: "h10", restaurant_name: "Bistro 47", locality: "HSR Layout", scheduled_date: tuesday, scheduled_time: "15:00", appointment_type: "Agreement", agent_name: "Arjun Nair" },
+    { id: "h11", restaurant_name: "The Fork Club", locality: "Koramangala", scheduled_date: tuesday, scheduled_time: "16:00", appointment_type: "Agreement", agent_name: "Priya Sharma" },
+    { id: "h12", restaurant_name: "Olive & Rye", locality: "Sadashivanagar", scheduled_date: tuesday, scheduled_time: null, appointment_type: "Agreement", agent_name: "Rahul Mehta" },
   ];
 
   const mergedAppointments = [
@@ -285,7 +285,10 @@ const Dashboard = () => {
               {dayAppointments.map((a, idx) => (
                 <div key={idx} className="flex flex-col gap-1 p-2.5 rounded-md bg-muted/50 border border-border/40">
                   <div className="flex items-start justify-between gap-2">
-                    <span className="font-medium text-sm leading-tight flex-1">{a.restaurant_name}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium text-sm leading-tight block">{a.restaurant_name}</span>
+                      {(a as any).locality && <span className="text-[11px] text-muted-foreground">{(a as any).locality}</span>}
+                    </div>
                     <Badge variant="outline" className={`text-[10px] shrink-0 ${typeColors[a.appointment_type] || ""}`}>{a.appointment_type}</Badge>
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
