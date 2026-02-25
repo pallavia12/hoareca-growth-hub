@@ -235,18 +235,20 @@ export default function LeadMasterPage() {
                       <StageBlockMobile title="S4: Customer" agent={row.currentStage === "Customer" ? "Created" : "—"} days={row.currentStage === "Customer" ? 0 : 0} visits={0} isCustomerStage customerId={row.customerId} />
                     </div>
 
-                    {/* KYC verification tag */}
+                    {/* KYC verification tag - compact inline tag only */}
                     {row.lead && (row.lead as any).verification_status && (() => {
                       const vs = (row.lead as any).verification_status as string;
-                      const vColor = vs === "Verified" ? "text-success" : vs === "Duplicate" ? "text-warning" : "text-destructive";
-                      const vIcon = vs === "Verified" ? <ShieldCheck className="w-3 h-3" /> : vs === "Duplicate" ? <ShieldX className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />;
+                      const tagClass = vs === "Verified"
+                        ? "bg-success/10 text-success border-success/20"
+                        : vs === "Duplicate"
+                        ? "bg-warning/10 text-warning border-warning/20"
+                        : "bg-destructive/10 text-destructive border-destructive/20";
+                      const icon = vs === "Verified" ? <ShieldCheck className="w-3 h-3" /> : vs === "Duplicate" ? <ShieldX className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />;
                       return (
-                        <div className={`flex items-center gap-1 ml-6 mb-1 text-[11px] font-medium ${vColor}`}>
-                          {vIcon}
-                          <span>KYC: {vs}</span>
-                          {(row.lead as any).verification_note && (
-                            <span className="text-muted-foreground font-normal ml-1 truncate max-w-[160px]">— {(row.lead as any).verification_note}</span>
-                          )}
+                        <div className="ml-6 mb-1">
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${tagClass}`}>
+                            {icon} KYC: {vs}
+                          </span>
                         </div>
                       );
                     })()}
