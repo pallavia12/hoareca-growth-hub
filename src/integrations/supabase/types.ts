@@ -305,6 +305,7 @@ export type Database = {
           franchised: boolean | null
           geo_lat: number | null
           geo_lng: number | null
+          gst_cert_url: string | null
           gst_id: string | null
           id: string
           instagram_url: string | null
@@ -314,6 +315,8 @@ export type Database = {
           others_info: string | null
           outlet_address: string | null
           outlet_photo_url: string | null
+          pan_card_url: string | null
+          pan_number: string | null
           pincode: string
           pm_contact: string | null
           prospect_id: string | null
@@ -322,6 +325,8 @@ export type Database = {
           status: string
           swiggy_zomato_url: string | null
           updated_at: string
+          verification_note: string | null
+          verification_status: string | null
           visit_count: number | null
         }
         Insert: {
@@ -340,6 +345,7 @@ export type Database = {
           franchised?: boolean | null
           geo_lat?: number | null
           geo_lng?: number | null
+          gst_cert_url?: string | null
           gst_id?: string | null
           id?: string
           instagram_url?: string | null
@@ -349,6 +355,8 @@ export type Database = {
           others_info?: string | null
           outlet_address?: string | null
           outlet_photo_url?: string | null
+          pan_card_url?: string | null
+          pan_number?: string | null
           pincode: string
           pm_contact?: string | null
           prospect_id?: string | null
@@ -357,6 +365,8 @@ export type Database = {
           status?: string
           swiggy_zomato_url?: string | null
           updated_at?: string
+          verification_note?: string | null
+          verification_status?: string | null
           visit_count?: number | null
         }
         Update: {
@@ -375,6 +385,7 @@ export type Database = {
           franchised?: boolean | null
           geo_lat?: number | null
           geo_lng?: number | null
+          gst_cert_url?: string | null
           gst_id?: string | null
           id?: string
           instagram_url?: string | null
@@ -384,6 +395,8 @@ export type Database = {
           others_info?: string | null
           outlet_address?: string | null
           outlet_photo_url?: string | null
+          pan_card_url?: string | null
+          pan_number?: string | null
           pincode?: string
           pm_contact?: string | null
           prospect_id?: string | null
@@ -392,6 +405,8 @@ export type Database = {
           status?: string
           swiggy_zomato_url?: string | null
           updated_at?: string
+          verification_note?: string | null
+          verification_status?: string | null
           visit_count?: number | null
         }
         Relationships: [

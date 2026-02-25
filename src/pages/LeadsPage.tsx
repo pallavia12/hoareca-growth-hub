@@ -24,7 +24,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Plus, Search, CalendarIcon,
+  Plus, Search, CalendarIcon, ShieldCheck, ShieldAlert, ShieldX, Upload,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -38,6 +38,22 @@ const tagColors: Record<string, string> = {
   Rescheduled: "bg-warning/10 text-warning border-warning/20",
   Dropped: "bg-destructive/10 text-destructive border-destructive/20",
 };
+
+const verificationColors: Record<string, string> = {
+  Verified: "bg-success/10 text-success border-success/20",
+  Unverified: "bg-warning/10 text-warning border-warning/20",
+  Duplicate: "bg-destructive/10 text-destructive border-destructive/20",
+};
+
+// Simple file upload helper for docs
+async function uploadDoc(file: File, folder: string): Promise<string | null> {
+  const ext = file.name.split(".").pop();
+  const path = `${folder}/${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from("photos").upload(path, file, { upsert: true });
+  if (error) return null;
+  const { data } = supabase.storage.from("photos").getPublicUrl(path);
+  return data.publicUrl;
+}
 
 export default function LeadsPage() {
   const { leads, loading: leadsLoading, addLead, updateLead, refetch: refetchLeads } = useLeads();
@@ -92,29 +108,47 @@ export default function LeadsPage() {
   // Photo state (optional in Step 2)
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
+  // KYC states
+  const [gstCertUrl, setGstCertUrl] = useState<string | null>(null);
+  const [panCardUrl, setPanCardUrl] = useState<string | null>(null);
+  const [gstCertUploading, setGstCertUploading] = useState(false);
+  const [panCardUploading, setPanCardUploading] = useState(false);
+
+  // Verification dialog
+  const [verifyOpen, setVerifyOpen] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<"Verified" | "Unverified" | "Duplicate" | null>(null);
+  const [selectedVerify, setSelectedVerify] = useState<"Verified" | "Unverified" | "Duplicate">("Verified");
+
   const [form, setForm] = useState({
     client_name: "", outlet_address: "", pincode: "", locality: "",
-    contact_number: "", gst_id: "",
+    contact_number: "", gst_id: "", pan_number: "",
     purchase_manager_name: "", pm_contact: "", email: "", instagram_url: "", linkedin_url: "", swiggy_zomato_url: "", others_info: "",
     avocado_consumption: "", avocado_variety: "", current_supplier: "", estimated_monthly_spend: "",
     franchised: false,
     appointment_date: "", appointment_time: "",
     remarks: "",
+    verification_status: "",
+    verification_note: "",
   });
 
   const resetForm = () => {
     setForm({
       client_name: "", outlet_address: "", pincode: "", locality: "",
-      contact_number: "", gst_id: "",
+      contact_number: "", gst_id: "", pan_number: "",
       purchase_manager_name: "", pm_contact: "", email: "", instagram_url: "", linkedin_url: "", swiggy_zomato_url: "", others_info: "",
       avocado_consumption: "", avocado_variety: "", current_supplier: "", estimated_monthly_spend: "",
       franchised: false,
       appointment_date: "", appointment_time: "",
       remarks: "",
+      verification_status: "",
+      verification_note: "",
     });
     setPinLat(null);
     setPinLng(null);
     setPhotoUrl(null);
+    setGstCertUrl(null);
+    setPanCardUrl(null);
+    setVerifyResult(null);
   };
 
   const myProspects = useMemo(() => {
@@ -219,19 +253,22 @@ export default function LeadsPage() {
     return "visit_count";
   };
 
-  const handleSaveLead = async () => {
-    if (!form.client_name || !form.pincode) return;
+  const buildLeadPayload = (extraFields = {}) => {
     const field = getIncrementField();
     const existingLead = createLeadProspectId ? getLeadForProspect(createLeadProspectId) : null;
     const currentCount = existingLead ? ((existingLead as any)[field] || 0) : 0;
-
-    const ok = await addLead({
+    return {
       client_name: form.client_name,
       pincode: form.pincode,
       locality: form.locality || null,
       outlet_address: form.outlet_address || null,
       contact_number: form.contact_number || null,
       gst_id: form.gst_id || null,
+      gst_cert_url: gstCertUrl,
+      pan_number: form.pan_number || null,
+      pan_card_url: panCardUrl,
+      verification_status: form.verification_status || null,
+      verification_note: form.verification_note || null,
       purchase_manager_name: form.purchase_manager_name || null,
       pm_contact: form.pm_contact || null,
       avocado_consumption: form.avocado_consumption || null,
@@ -244,17 +281,20 @@ export default function LeadsPage() {
       remarks: form.remarks || null,
       prospect_id: createLeadProspectId || null,
       created_by: user?.email || null,
-      status: "qualified",
       geo_lat: pinLat,
       geo_lng: pinLng,
       outlet_photo_url: photoUrl,
       call_count: field === "call_count" ? currentCount + 1 : (existingLead?.call_count || 0),
       visit_count: field === "visit_count" ? currentCount + 1 : (existingLead?.visit_count || 0),
-    });
+      ...extraFields,
+    };
+  };
+
+  const handleSaveLead = async () => {
+    if (!form.client_name || !form.pincode) return;
+    const ok = await addLead({ ...buildLeadPayload(), status: "qualified" } as any);
     if (ok) {
-      if (createLeadProspectId) {
-        await updateProspect(createLeadProspectId, { tag: "Qualified" });
-      }
+      if (createLeadProspectId) await updateProspect(createLeadProspectId, { tag: "Qualified" });
       toast({ title: "Lead saved — marked as Qualified" });
       resetForm();
       setCreateLeadOpen(false);
@@ -265,41 +305,17 @@ export default function LeadsPage() {
 
   const handleSaveIncomplete = async () => {
     if (!form.client_name || !form.pincode) return;
-    const field = getIncrementField();
-    const existingLead = createLeadProspectId ? getLeadForProspect(createLeadProspectId) : null;
-    const currentCount = existingLead ? ((existingLead as any)[field] || 0) : 0;
-
     const remarksSuffix = revisitDate ? `\n[Re-visit: ${format(revisitDate, "dd MMM yyyy")}${revisitTime ? " " + revisitTime : ""}]` : "";
     const ok = await addLead({
-      client_name: form.client_name,
-      pincode: form.pincode,
-      locality: form.locality || null,
-      outlet_address: form.outlet_address || null,
-      contact_number: form.contact_number || null,
-      gst_id: form.gst_id || null,
-      purchase_manager_name: form.purchase_manager_name || null,
-      pm_contact: form.pm_contact || null,
-      avocado_consumption: form.avocado_consumption || null,
-      avocado_variety: form.avocado_variety || null,
-      current_supplier: form.current_supplier || null,
-      estimated_monthly_spend: form.estimated_monthly_spend ? Number(form.estimated_monthly_spend) : null,
-      franchised: form.franchised,
-      appointment_date: revisitDate ? format(revisitDate, "yyyy-MM-dd") : null,
-      appointment_time: revisitTime || null,
-      remarks: (form.remarks || "") + remarksSuffix,
-      prospect_id: createLeadProspectId || null,
-      created_by: user?.email || null,
+      ...buildLeadPayload({
+        appointment_date: revisitDate ? format(revisitDate, "yyyy-MM-dd") : null,
+        appointment_time: revisitTime || null,
+        remarks: (form.remarks || "") + remarksSuffix,
+      }),
       status: "in_progress",
-      geo_lat: pinLat,
-      geo_lng: pinLng,
-      outlet_photo_url: photoUrl,
-      call_count: field === "call_count" ? currentCount + 1 : (existingLead?.call_count || 0),
-      visit_count: field === "visit_count" ? currentCount + 1 : (existingLead?.visit_count || 0),
-    });
+    } as any);
     if (ok) {
-      if (createLeadProspectId) {
-        await updateProspect(createLeadProspectId, { tag: "In Progress" });
-      }
+      if (createLeadProspectId) await updateProspect(createLeadProspectId, { tag: "In Progress" });
       toast({ title: "Saved as incomplete — re-visit scheduled" });
       resetForm();
       setCreateLeadOpen(false);
@@ -330,7 +346,151 @@ export default function LeadsPage() {
     setUnsuccessfulRemarks("");
   };
 
+  const canVerify = !!(form.gst_id || form.pan_number);
+
+  const handleVerifyClick = () => {
+    if (!canVerify) return;
+    setSelectedVerify("Verified");
+    setVerifyOpen(true);
+  };
+
+  const handleConfirmVerify = () => {
+    let note = "";
+    if (selectedVerify === "Verified") {
+      const contactDisplay = form.contact_number || "XXXXXXXXXX";
+      note = `Contact on record: ${contactDisplay}`;
+    } else if (selectedVerify === "Unverified") {
+      note = "Entered GST ID and PAN number are not linked";
+    } else if (selectedVerify === "Duplicate") {
+      note = "Duplicate entries found";
+    }
+    setVerifyResult(selectedVerify);
+    setForm(f => ({ ...f, verification_status: selectedVerify, verification_note: note }));
+    setVerifyOpen(false);
+  };
+
+  const handleDocUpload = async (file: File, type: "gst" | "pan") => {
+    const allowed = ["image/png", "image/jpeg", "application/pdf"];
+    if (!allowed.includes(file.type)) {
+      toast({ title: "Invalid file type", description: "Only PNG, JPG, or PDF allowed", variant: "destructive" });
+      return;
+    }
+    if (type === "gst") {
+      setGstCertUploading(true);
+      const url = await uploadDoc(file, "gst-certs");
+      setGstCertUrl(url);
+      setGstCertUploading(false);
+    } else {
+      setPanCardUploading(true);
+      const url = await uploadDoc(file, "pan-cards");
+      setPanCardUrl(url);
+      setPanCardUploading(false);
+    }
+  };
+
   const loading = prospectsLoading || leadsLoading;
+
+  const renderVerificationBadge = () => {
+    if (!verifyResult) return null;
+    const colors = verificationColors[verifyResult] || "";
+    const icons = {
+      Verified: <ShieldCheck className="w-3 h-3 mr-1" />,
+      Unverified: <ShieldAlert className="w-3 h-3 mr-1" />,
+      Duplicate: <ShieldX className="w-3 h-3 mr-1" />,
+    };
+    return (
+      <Badge variant="outline" className={`text-[11px] flex items-center ${colors}`}>
+        {icons[verifyResult]}{verifyResult}
+      </Badge>
+    );
+  };
+
+  const renderKycSection = () => (
+    <div className="space-y-3">
+      <p className="text-xs font-semibold text-foreground uppercase tracking-wider border-b pb-1">KYC / Identification</p>
+
+      {/* GST row */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs">GST Certificate</Label>
+          <div className="relative">
+            <input
+              type="file"
+              accept=".png,.jpg,.jpeg,.pdf"
+              className="hidden"
+              id="gst-cert-input"
+              onChange={e => e.target.files?.[0] && handleDocUpload(e.target.files[0], "gst")}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full text-xs h-9 justify-start"
+              onClick={() => document.getElementById("gst-cert-input")?.click()}
+              disabled={gstCertUploading}
+            >
+              <Upload className="w-3 h-3 mr-1.5" />
+              {gstCertUploading ? "Uploading..." : gstCertUrl ? "✓ Uploaded" : "Upload / Capture"}
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">GST IN</Label>
+          <Input placeholder="22AAAAA0000A1Z5" value={form.gst_id} onChange={e => setForm(f => ({ ...f, gst_id: e.target.value }))} className="text-xs h-9" />
+        </div>
+      </div>
+
+      {/* PAN row */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs">PAN Card</Label>
+          <div className="relative">
+            <input
+              type="file"
+              accept=".png,.jpg,.jpeg,.pdf"
+              className="hidden"
+              id="pan-card-input"
+              onChange={e => e.target.files?.[0] && handleDocUpload(e.target.files[0], "pan")}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full text-xs h-9 justify-start"
+              onClick={() => document.getElementById("pan-card-input")?.click()}
+              disabled={panCardUploading}
+            >
+              <Upload className="w-3 h-3 mr-1.5" />
+              {panCardUploading ? "Uploading..." : panCardUrl ? "✓ Uploaded" : "Upload / Capture"}
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">PAN Number</Label>
+          <Input placeholder="ABCDE1234F" value={form.pan_number} onChange={e => setForm(f => ({ ...f, pan_number: e.target.value }))} className="text-xs h-9" />
+        </div>
+      </div>
+
+      {/* Verify CTA */}
+      <div className="flex items-center gap-3 pt-1">
+        <Button
+          type="button"
+          size="sm"
+          variant={canVerify ? "default" : "outline"}
+          className="text-xs"
+          onClick={handleVerifyClick}
+          disabled={!canVerify}
+        >
+          <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
+          Verify Identity
+        </Button>
+        {renderVerificationBadge()}
+        {verifyResult && form.verification_note && (
+          <span className="text-[11px] text-muted-foreground truncate max-w-[160px]">{form.verification_note}</span>
+        )}
+      </div>
+    </div>
+  );
 
   const renderLeadForm = () => (
     <div className="grid gap-4 py-2 max-h-[60vh] overflow-y-auto">
@@ -352,19 +512,17 @@ export default function LeadsPage() {
           </div>
         </div>
 
-        {/* Map Pin Picker - vanilla Leaflet, no context issues */}
+        {/* Map Pin Picker */}
         {(createLeadOpen || addNewLeadOpen) && (
           <MapPinPicker lat={pinLat} lng={pinLng} onLocationSelect={(lat, lng) => { setPinLat(lat); setPinLng(lng); }} />
         )}
-
-        <div className="space-y-1">
-          <Label className="text-xs">GST ID</Label>
-          <Input placeholder="Optional" value={form.gst_id} onChange={e => setForm(f => ({ ...f, gst_id: e.target.value }))} />
-        </div>
       </div>
 
-      {/* Photo Capture (optional in Step 2) */}
+      {/* Photo Capture (optional) */}
       <PhotoCapture label="Outlet Photo" required={false} value={photoUrl} onCapture={setPhotoUrl} />
+
+      {/* KYC Section */}
+      {renderKycSection()}
 
       {/* Section 2: Contact Details */}
       <div className="space-y-3">
@@ -637,7 +795,7 @@ export default function LeadsPage() {
                 <TableHead className="text-xs">Name</TableHead>
                 <TableHead className="text-xs">Locality</TableHead>
                 <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
-                <TableHead className="text-xs">Created By</TableHead>
+                <TableHead className="text-xs">KYC</TableHead>
                 <TableHead className="text-xs">Visits</TableHead>
               </TableRow></TableHeader>
               <TableBody>
@@ -645,21 +803,28 @@ export default function LeadsPage() {
                   <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                 ) : filteredLeads.length === 0 ? (
                   <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No leads found.</TableCell></TableRow>
-                ) : filteredLeads.map(l => (
-                  <TableRow key={l.id} className="text-sm">
-                    <TableCell className="font-medium max-w-[180px] truncate">{l.client_name}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{l.locality || "—"}</TableCell>
-                    <TableCell className="text-xs font-mono hidden sm:table-cell">{l.pincode}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{l.created_by || "—"}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        {(l.visit_count || 0) > 0 && <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">{l.visit_count} visit{(l.visit_count || 0) === 1 ? "" : "s"}</Badge>}
-                        {(l.call_count || 0) > 0 && <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/20">{l.call_count} call{(l.call_count || 0) === 1 ? "" : "s"}</Badge>}
-                        {((l.visit_count || 0) + (l.call_count || 0)) === 0 && <span className="text-xs text-muted-foreground">—</span>}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                ) : filteredLeads.map(l => {
+                  const vs = (l as any).verification_status as string | null;
+                  return (
+                    <TableRow key={l.id} className="text-sm">
+                      <TableCell className="font-medium max-w-[180px] truncate">{l.client_name}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{l.locality || "—"}</TableCell>
+                      <TableCell className="text-xs font-mono hidden sm:table-cell">{l.pincode}</TableCell>
+                      <TableCell>
+                        {vs ? (
+                          <Badge variant="outline" className={`text-[10px] ${verificationColors[vs] || ""}`}>{vs}</Badge>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          {(l.visit_count || 0) > 0 && <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">{l.visit_count} visit{(l.visit_count || 0) === 1 ? "" : "s"}</Badge>}
+                          {(l.call_count || 0) > 0 && <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/20">{l.call_count} call{(l.call_count || 0) === 1 ? "" : "s"}</Badge>}
+                          {((l.visit_count || 0) + (l.call_count || 0)) === 0 && <span className="text-xs text-muted-foreground">—</span>}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div></CardContent></Card>
@@ -731,20 +896,70 @@ export default function LeadsPage() {
                 {unsuccessfulReasons.map((reason, i) => (
                   <div key={reason} className="flex items-center space-x-2">
                     <RadioGroupItem value={reason} id={`reason-${i}`} />
-                    <Label htmlFor={`reason-${i}`} className="text-sm cursor-pointer">{reason}</Label>
+                    <Label htmlFor={`reason-${i}`} className="text-sm">{reason}</Label>
                   </div>
                 ))}
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="Drop" id="reason-drop" />
+                  <Label htmlFor="reason-drop" className="text-sm">Drop</Label>
+                </div>
               </RadioGroup>
-              {unsuccessfulReasons.length === 0 && <p className="text-xs text-muted-foreground">No reasons configured. Add step 1 or 2 reasons in Admin → Drop Reasons.</p>}
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Remarks *</Label>
-              <Textarea placeholder="Details..." value={unsuccessfulRemarks} onChange={e => setUnsuccessfulRemarks(e.target.value)} rows={2} />
+              <Textarea placeholder="Brief notes..." rows={2} value={unsuccessfulRemarks} onChange={e => setUnsuccessfulRemarks(e.target.value)} />
             </div>
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" onClick={handleLogUnsuccessful} disabled={!unsuccessfulReason || !unsuccessfulRemarks}>Submit</Button>
+            <Button size="sm" onClick={handleLogUnsuccessful} disabled={!unsuccessfulReason || !unsuccessfulRemarks}>Confirm</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Verify Identity Dialog */}
+      <Dialog open={verifyOpen} onOpenChange={setVerifyOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4" /> Identity Verification
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <p className="text-xs text-muted-foreground">Select verification result for this lead:</p>
+            <RadioGroup value={selectedVerify} onValueChange={v => setSelectedVerify(v as any)} className="space-y-3">
+              <div className="flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer hover:bg-muted/40" onClick={() => setSelectedVerify("Verified")}>
+                <RadioGroupItem value="Verified" id="v-verified" />
+                <div>
+                  <Label htmlFor="v-verified" className="text-sm font-medium cursor-pointer">✅ Verified</Label>
+                  <p className="text-[11px] text-muted-foreground">Contact on record: {form.contact_number || "N/A"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer hover:bg-muted/40" onClick={() => setSelectedVerify("Unverified")}>
+                <RadioGroupItem value="Unverified" id="v-unverified" />
+                <div>
+                  <Label htmlFor="v-unverified" className="text-sm font-medium cursor-pointer">⚠️ Unverified</Label>
+                  <p className="text-[11px] text-muted-foreground">Entered GST ID and PAN number are not linked</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer hover:bg-muted/40" onClick={() => setSelectedVerify("Duplicate")}>
+                <RadioGroupItem value="Duplicate" id="v-duplicate" />
+                <div>
+                  <Label htmlFor="v-duplicate" className="text-sm font-medium cursor-pointer">🔁 Duplicate</Label>
+                  <div className="mt-1 space-y-1">
+                    <p className="text-[11px] text-muted-foreground font-medium">Existing records found:</p>
+                    <div className="bg-muted/50 rounded p-1.5 space-y-0.5">
+                      <p className="text-[11px] font-mono">• LD-001 — Chai Point, Koramangala</p>
+                      <p className="text-[11px] font-mono">• LD-002 — Chai Point, Indiranagar</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </RadioGroup>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+            <Button size="sm" onClick={handleConfirmVerify}>Confirm</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
