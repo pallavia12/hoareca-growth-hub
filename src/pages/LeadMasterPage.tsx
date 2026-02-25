@@ -128,6 +128,78 @@ export default function LeadMasterPage() {
     }
   };
 
+  const getPurposeOfVisit = (action: string, entityType: string): string => {
+    const type = entityType?.toLowerCase();
+    const act = action?.toLowerCase();
+
+    if (type === "prospect") {
+      if (act.includes("created")) return "Prospect — Identified";
+      if (act.includes("reassign")) return "Prospect — Reassigned";
+      return "Prospect — Review";
+    }
+    if (type === "lead") {
+      if (act.includes("created") || act.includes("first") || act.includes("new")) return "Lead Generation — First Visit";
+      if (act.includes("revisit") || act.includes("re-visit")) return "Lead Generation — Revisit";
+      if (act.includes("kyc") || act.includes("verif")) return "Lead Generation — KYC Verification";
+      if (act.includes("call")) return "Lead Generation — Follow-up Call";
+      return "Lead Generation — Visit";
+    }
+    if (type === "sample_order" || type === "sample order") {
+      if (act.includes("reschedul")) return "Sample Order — Rescheduled Delivery";
+      if (act.includes("deliver")) return "Sample Order — Delivery";
+      if (act.includes("revisit") || act.includes("re-visit")) return "Sample Order — Revisit";
+      if (act.includes("complet") || act.includes("done")) return "Sample Order — Delivery Completed";
+      if (act.includes("created") || act.includes("book")) return "Sample Order — Booking Visit";
+      return "Sample Order — Follow-up";
+    }
+    if (type === "agreement") {
+      if (act.includes("sent")) return "Agreement — Sent to Client";
+      if (act.includes("signed")) return "Agreement — Signed";
+      if (act.includes("feedback")) return "Agreement — Quality Feedback";
+      return "Agreement — Follow-up";
+    }
+    return action || "Visit";
+  };
+
+  const DEMO_VISIT_EXAMPLES: ActivityLog[] = [
+    {
+      id: "demo-1",
+      timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      entity_id: "demo",
+      entity_type: "lead",
+      action: "first visit logged",
+      user_email: "arjun@company.com",
+      user_role: "lead_taker",
+      notes: "Owner was present, showed interest in hass variety",
+      before_state: null,
+      after_state: null,
+    },
+    {
+      id: "demo-2",
+      timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+      entity_id: "demo",
+      entity_type: "sample_order",
+      action: "rescheduled delivery",
+      user_email: "priya@company.com",
+      user_role: "kam",
+      notes: "Chef requested delivery slot change to morning",
+      before_state: null,
+      after_state: null,
+    },
+    {
+      id: "demo-3",
+      timestamp: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+      entity_id: "demo",
+      entity_type: "agreement",
+      action: "agreement sent",
+      user_email: "rahul@company.com",
+      user_role: "kam",
+      notes: "Pricing agreed at ₹180/kg, 7 day credit terms",
+      before_state: null,
+      after_state: null,
+    },
+  ];
+
   const getLastVisits = (prospectId: string, leadId?: string) => {
     const entityIds = [prospectId];
     if (leadId) entityIds.push(leadId);
@@ -287,26 +359,47 @@ export default function LeadMasterPage() {
                       </h4>
                       {(() => {
                         const visits = getLastVisits(row.prospect.id, row.lead?.id);
-                        if (visits.type === "real") {
-                          if (visits.data.length === 0) return <p className="text-xs text-muted-foreground">No activity logs found.</p>;
-                          return (
-                            <div className="space-y-2">
-                              {(visits.data as ActivityLog[]).map(v => (
-                                <div key={v.id} className="bg-background border rounded-md p-2 text-[11px] space-y-0.5">
-                                  <div className="flex justify-between">
-                                    <span className="font-medium">{format(new Date(v.timestamp), "dd MMM yyyy")}</span>
-                                    <Badge variant="outline" className="text-[9px]">{v.entity_type}</Badge>
-                                  </div>
-                                  <p><span className="text-muted-foreground">Agent:</span> {v.user_email || "—"}</p>
-                                  <p><span className="text-muted-foreground">Action:</span> {v.action}</p>
-                                  {v.notes && <p><span className="text-muted-foreground">Remarks:</span> {v.notes}</p>}
+                        const logsToShow: ActivityLog[] = visits.data.length > 0
+                          ? (visits.data as ActivityLog[])
+                          : DEMO_VISIT_EXAMPLES;
+                        const isDemoData = visits.data.length === 0;
+                        return (
+                          <div className="space-y-0 divide-y divide-border rounded-md border overflow-hidden">
+                            {isDemoData && (
+                              <div className="bg-muted/40 px-3 py-1.5 text-[10px] text-muted-foreground italic">
+                                No real logs yet — showing example format
+                              </div>
+                            )}
+                            {logsToShow.map((v, idx) => (
+                              <div key={v.id} className="bg-background px-3 py-2 text-[11px]">
+                                {/* Line 1: Date · Time · Agent */}
+                                <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                                  <span className="font-semibold text-foreground">
+                                    {format(new Date(v.timestamp), "dd MMM yyyy")}
+                                  </span>
+                                  <span className="text-muted-foreground/50">·</span>
+                                  <span className="text-muted-foreground">
+                                    {format(new Date(v.timestamp), "hh:mm a")}
+                                  </span>
+                                  <span className="text-muted-foreground/50">·</span>
+                                  <span className="text-foreground font-medium">
+                                    {v.user_email?.split("@")[0] || "—"}
+                                  </span>
                                 </div>
-                              ))}
-                            </div>
-                          );
-                        }
-                        if (visits.data.length === 0) return <p className="text-xs text-muted-foreground">No visits recorded.</p>;
-                        return null;
+                                {/* Line 2: Purpose */}
+                                <p className="text-primary font-medium text-[11px]">
+                                  {getPurposeOfVisit(v.action, v.entity_type)}
+                                </p>
+                                {/* Line 3: Remarks */}
+                                {v.notes && (
+                                  <p className="text-muted-foreground mt-0.5 leading-snug">
+                                    {v.notes}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        );
                       })()}
                     </div>
                   </div>
