@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { useProspects } from "@/hooks/useProspects";
 import { useLeads } from "@/hooks/useLeads";
 import { useSampleOrders } from "@/hooks/useSampleOrders";
 import { useAgreements } from "@/hooks/useAgreements";
-import { Search, ChevronDown, ChevronRight, Eye, Clock, MapPin } from "lucide-react";
+import { Search, ChevronDown, ChevronRight, Eye, Clock, MapPin, ShieldCheck, ShieldAlert, ShieldX } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -234,6 +234,31 @@ export default function LeadMasterPage() {
                       <StageBlockMobile title="S3: SO→A" agent={row.stage3.agent} visits={row.stage3.visits} days={row.stage3.days} />
                       <StageBlockMobile title="S4: Customer" agent={row.currentStage === "Customer" ? "Created" : "—"} days={row.currentStage === "Customer" ? 0 : 0} visits={0} isCustomerStage customerId={row.customerId} />
                     </div>
+
+                    {/* KYC verification tag */}
+                    {row.lead && (row.lead as any).verification_status && (() => {
+                      const vs = (row.lead as any).verification_status as string;
+                      const vColors: Record<string, string> = {
+                        Verified: "bg-success/10 text-success border-success/20",
+                        Unverified: "bg-warning/10 text-warning border-warning/20",
+                        Duplicate: "bg-destructive/10 text-destructive border-destructive/20",
+                      };
+                      const vIcons: Record<string, React.ReactNode> = {
+                        Verified: <ShieldCheck className="w-2.5 h-2.5 mr-0.5" />,
+                        Unverified: <ShieldAlert className="w-2.5 h-2.5 mr-0.5" />,
+                        Duplicate: <ShieldX className="w-2.5 h-2.5 mr-0.5" />,
+                      };
+                      return (
+                        <div className="flex items-center ml-6 mb-1.5">
+                          <Badge variant="outline" className={`text-[10px] flex items-center gap-0.5 ${vColors[vs] || ""}`}>
+                            {vIcons[vs]}KYC: {vs}
+                          </Badge>
+                          {(row.lead as any).verification_note && (
+                            <span className="text-[10px] text-muted-foreground ml-2 truncate max-w-[180px]">{(row.lead as any).verification_note}</span>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* Summary row */}
                     <div className="flex gap-4 mt-2 ml-6 text-[11px] text-muted-foreground">
