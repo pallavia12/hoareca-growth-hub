@@ -575,22 +575,28 @@ export default function AgreementsPage() {
                             <TableCell className="text-xs text-muted-foreground">
                               {o.delivery_date ? format(new Date(o.delivery_date), "dd MMM yyyy") : "—"}
                             </TableCell>
-                            <TableCell className="text-xs">
+                            <TableCell className="text-xs min-w-[70px]">
                               {combos.length > 0 ? (
-                                <div className="space-y-0.5">
+                                <div className="flex flex-col gap-0">
                                   {combos.map((c, i) => (
-                                    <div key={i} className="text-[11px] font-medium">{c.qty}</div>
+                                    <div key={i} className="flex items-center gap-1 border-b border-dashed border-muted last:border-0 py-1">
+                                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-muted text-[9px] font-bold text-muted-foreground shrink-0">{i + 1}</span>
+                                      <span className="text-[11px] font-semibold">{c.qty}</span>
+                                    </div>
                                   ))}
                                 </div>
                               ) : (
                                 <span className="text-muted-foreground">{o.sample_qty_units || "—"}</span>
                               )}
                             </TableCell>
-                            <TableCell className="text-xs">
+                            <TableCell className="text-xs min-w-[90px]">
                               {combos.length > 0 ? (
-                                <div className="space-y-0.5">
+                                <div className="flex flex-col gap-0">
                                   {combos.map((c, i) => (
-                                    <div key={i} className="text-[11px] text-muted-foreground">{c.ripeness}</div>
+                                    <div key={i} className="flex items-center gap-1 border-b border-dashed border-muted last:border-0 py-1">
+                                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-muted text-[9px] font-bold text-muted-foreground shrink-0">{i + 1}</span>
+                                      <span className="text-[11px] text-muted-foreground">{c.ripeness}</span>
+                                    </div>
                                   ))}
                                 </div>
                               ) : (
