@@ -73,8 +73,6 @@ export default function SampleOrdersPage() {
   // Reassign state (shared with step 1 logic)
   const [reassignOpen, setReassignOpen] = useState(false);
   const [reassignLeadId, setReassignLeadId] = useState<string | null>(null);
-  const [reassignOption, setReassignOption] = useState<"call" | "visit" | "unassign">("call");
-  const [reassignStep, setReassignStep] = useState<1 | 2>(1);
   const [reassignTo, setReassignTo] = useState("");
   const [reassignUserSearch, setReassignUserSearch] = useState("");
   const [allUsers, setAllUsers] = useState<{ email: string; full_name: string | null }[]>([]);
@@ -218,24 +216,15 @@ export default function SampleOrdersPage() {
 
   const openReassign = (leadId: string) => {
     setReassignLeadId(leadId);
-    setReassignOption("call");
-    setReassignStep(1);
     setReassignTo("");
     setReassignUserSearch("");
     setReassignOpen(true);
   };
 
   const handleConfirmReassign = async () => {
-    if (!reassignLeadId) return;
-    // In Step 3, re-assign means updating the lead's created_by
-    if (reassignOption === "unassign") {
-      await updateLead(reassignLeadId, { created_by: null });
-      toast({ title: "Lead unassigned" });
-    } else {
-      if (!reassignTo) return;
-      await updateLead(reassignLeadId, { created_by: reassignTo });
-      toast({ title: "Lead re-assigned" });
-    }
+    if (!reassignLeadId || !reassignTo) return;
+    await updateLead(reassignLeadId, { created_by: reassignTo });
+    toast({ title: "Lead re-assigned" });
     setReassignOpen(false);
   };
 
@@ -376,15 +365,15 @@ export default function SampleOrdersPage() {
       <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{assignedTo || "—"}</TableCell>
       <TableCell>
         <div className="flex gap-1 flex-wrap">
-          <Button size="sm" className="text-xs h-7" onClick={() => openLogVisit(leadId, orderId)}>Log Visit</Button>
-          <Button size="sm" variant="outline" className="text-xs h-7 border-warning/40 text-warning hover:bg-warning/10" onClick={() => openReassign(leadId)}>Re-assign</Button>
-          <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => {
+          <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openLogVisit(leadId, orderId)}>Log Visit</Button>
+          <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(leadId)}>Re-assign</Button>
+          <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
             setDropLeadId(leadId);
             setDropOrderId(orderId || null);
             setDropReason("");
             setDropRemarks("");
             setDropOpen(true);
-          }}>Not Interested</Button>
+          }}>Mark Dropout</Button>
         </div>
       </TableCell>
     </TableRow>
@@ -413,7 +402,7 @@ export default function SampleOrdersPage() {
           <TabsTrigger value="scheduled" className="text-xs">Scheduled ({counts.scheduled})</TabsTrigger>
           <TabsTrigger value="completed" className="text-xs">Completed ({counts.completed})</TabsTrigger>
           <TabsTrigger value="revisit" className="text-xs">Re-visits ({counts.revisit})</TabsTrigger>
-          <TabsTrigger value="dropped" className="text-xs">Dropped ({counts.dropped})</TabsTrigger>
+          <TabsTrigger value="dropped" className="text-xs">Dropouts ({counts.dropped})</TabsTrigger>
         </TabsList>
 
         {/* Filters */}
@@ -574,15 +563,16 @@ export default function SampleOrdersPage() {
                           <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{o.visit_date ? format(new Date(o.visit_date), "dd MMM") : "—"}</TableCell>
                           <TableCell>
                             <div className="flex gap-1 flex-wrap">
-                              <Button size="sm" className="text-xs h-7" onClick={() => openLogVisit(o.lead_id, o.id)}>Log Visit</Button>
-                              <Button size="sm" variant="outline" className="text-xs h-7 border-warning/40 text-warning hover:bg-warning/10" onClick={() => openReassign(o.lead_id)}>Re-assign</Button>
-                              <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => {
+                              <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openLogVisit(o.lead_id, o.id)}>Log Visit</Button>
+                              <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(o.lead_id)}>Re-assign</Button>
+                              <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
                                 setDropLeadId(o.lead_id);
+
                                 setDropOrderId(o.id);
                                 setDropReason("");
                                 setDropRemarks("");
                                 setDropOpen(true);
-                              }}>Not Interested</Button>
+                              }}>Mark Dropout</Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -798,7 +788,7 @@ export default function SampleOrdersPage() {
       {/* Not Interested / Drop Dialog */}
       <Dialog open={dropOpen} onOpenChange={open => { if (!open) { setDropOpen(false); setDropLeadId(null); setDropOrderId(null); } }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle className="text-base">Not Interested</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="text-base">Mark Dropout</DialogTitle></DialogHeader>
           <div className="grid gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Reason *</Label>
@@ -819,67 +809,32 @@ export default function SampleOrdersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Re-assign Dialog */}
+      {/* Re-assign Dialog - direct agent list */}
       <Dialog open={reassignOpen} onOpenChange={open => { if (!open) setReassignOpen(false); }}>
         <DialogContent className="max-w-sm">
-          {reassignStep === 1 ? (
-            <>
-              <DialogHeader>
-                <DialogTitle className="text-base">Re-assign Lead</DialogTitle>
-              </DialogHeader>
-              <RadioGroup value={reassignOption} onValueChange={v => setReassignOption(v as any)} className="space-y-3 py-2">
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="call" id="s3-reassign-call" />
-                  <Label htmlFor="s3-reassign-call" className="text-sm cursor-pointer">Re-assign: Call</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="visit" id="s3-reassign-visit" />
-                  <Label htmlFor="s3-reassign-visit" className="text-sm cursor-pointer">Re-assign: Visit</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="unassign" id="s3-reassign-unassign" />
-                  <Label htmlFor="s3-reassign-unassign" className="text-sm cursor-pointer text-destructive">Unassign</Label>
-                </div>
-              </RadioGroup>
-              <DialogFooter>
-                <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-                {reassignOption === "unassign" ? (
-                  <Button size="sm" variant="destructive" onClick={handleConfirmReassign}>Unassign</Button>
-                ) : (
-                  <Button size="sm" onClick={() => setReassignStep(2)}>Next</Button>
-                )}
-              </DialogFooter>
-            </>
-          ) : (
-            <>
-              <DialogHeader>
-                <DialogTitle className="text-base">Re-assign To</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-3 py-2">
-                <Input placeholder="Search users..." value={reassignUserSearch} onChange={e => setReassignUserSearch(e.target.value)} className="h-8 text-xs" />
-                <div className="max-h-48 overflow-y-auto border rounded-md">
-                  {filteredReassignUsers.length === 0 ? (
-                    <p className="p-3 text-xs text-muted-foreground text-center">No users found</p>
-                  ) : (
-                    filteredReassignUsers.map(u => (
-                      <button
-                        key={u.email}
-                        className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors border-b last:border-b-0 ${reassignTo === u.email ? "bg-primary/10 text-primary" : ""}`}
-                        onClick={() => setReassignTo(u.email!)}
-                      >
-                        <span className="font-medium">{u.full_name || u.email}</span>
-                        {u.full_name && <span className="text-muted-foreground ml-2">{u.email}</span>}
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" size="sm" onClick={() => setReassignStep(1)}>Back</Button>
-                <Button size="sm" onClick={handleConfirmReassign} disabled={!reassignTo}>Re-assign</Button>
-              </DialogFooter>
-            </>
-          )}
+          <DialogHeader>
+            <DialogTitle className="text-base">Re-assign Lead</DialogTitle>
+            <p className="text-xs text-muted-foreground">Select an agent to re-assign this lead to</p>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Input placeholder="Search agents..." value={reassignUserSearch} onChange={e => setReassignUserSearch(e.target.value)} className="h-8 text-xs" />
+            <div className="max-h-48 overflow-y-auto border rounded-md">
+              {filteredReassignUsers.length === 0 ? (
+                <p className="p-3 text-xs text-muted-foreground text-center">No users found</p>
+              ) : filteredReassignUsers.map(u => (
+                <button key={u.email}
+                  className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors border-b last:border-b-0 ${reassignTo === u.email ? "bg-primary/10 text-primary" : ""}`}
+                  onClick={() => setReassignTo(u.email!)}>
+                  <span className="font-medium">{u.full_name || u.email}</span>
+                  {u.full_name && <span className="text-muted-foreground ml-2">{u.email}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+            <Button size="sm" className="bg-warning hover:bg-warning/90 text-warning-foreground" onClick={handleConfirmReassign} disabled={!reassignTo}>Re-assign</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

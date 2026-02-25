@@ -77,11 +77,8 @@ export default function AgreementsPage() {
   const [search, setSearch] = useState("");
   const [filterAgent, setFilterAgent] = useState("");
 
-  // Reassign state
   const [reassignOpen, setReassignOpen] = useState(false);
   const [reassignLeadId, setReassignLeadId] = useState<string | null>(null);
-  const [reassignOption, setReassignOption] = useState<"call" | "visit" | "unassign">("call");
-  const [reassignStep, setReassignStep] = useState<1 | 2>(1);
   const [reassignTo, setReassignTo] = useState("");
   const [reassignUserSearch, setReassignUserSearch] = useState("");
   const [allUsers, setAllUsers] = useState<{ email: string; full_name: string | null }[]>([]);
@@ -246,23 +243,15 @@ export default function AgreementsPage() {
 
   const openReassign = (leadId: string) => {
     setReassignLeadId(leadId);
-    setReassignOption("call");
-    setReassignStep(1);
     setReassignTo("");
     setReassignUserSearch("");
     setReassignOpen(true);
   };
 
   const handleConfirmReassign = async () => {
-    if (!reassignLeadId) return;
-    if (reassignOption === "unassign") {
-      await updateLead(reassignLeadId, { created_by: null });
-      toast({ title: "Lead unassigned" });
-    } else {
-      if (!reassignTo) return;
-      await updateLead(reassignLeadId, { created_by: reassignTo });
-      toast({ title: "Lead re-assigned" });
-    }
+    if (!reassignLeadId || !reassignTo) return;
+    await updateLead(reassignLeadId, { created_by: reassignTo });
+    toast({ title: "Lead re-assigned" });
     setReassignOpen(false);
   };
 
@@ -490,7 +479,7 @@ export default function AgreementsPage() {
           <TabsTrigger value="delivered" className="text-xs">Delivered ({counts.delivered})</TabsTrigger>
           <TabsTrigger value="revisit" className="text-xs">Revisits ({counts.revisit})</TabsTrigger>
           <TabsTrigger value="completed" className="text-xs">Completed ({counts.completed})</TabsTrigger>
-          <TabsTrigger value="dropped" className="text-xs">Drop-outs ({counts.dropped})</TabsTrigger>
+          <TabsTrigger value="dropped" className="text-xs">Dropouts ({counts.dropped})</TabsTrigger>
         </TabsList>
 
         {/* Filters */}
@@ -626,11 +615,11 @@ export default function AgreementsPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex gap-1 flex-wrap">
-                              <Button size="sm" className="text-xs h-7" onClick={() => openSendAgreement(item.orderId, item.agreementId)}>
-                                <Send className="w-3 h-3 mr-1" /> Send Agreement
+                              <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openSendAgreement(item.orderId, item.agreementId)}>
+                                <Send className="w-3 h-3 mr-1" /> Log Visit
                               </Button>
-                              <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => openNotInterested(item.orderId, item.agreementId)}>
-                                <XCircle className="w-3 h-3 mr-1" /> Not Interested
+                              <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => openNotInterested(item.orderId, item.agreementId)}>
+                                <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
                               </Button>
                             </div>
                           </TableCell>
@@ -675,16 +664,16 @@ export default function AgreementsPage() {
                             <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
                             <TableCell>
                               <div className="flex gap-1 flex-wrap">
-                                <Button size="sm" className="text-xs h-7" onClick={() => openSendAgreement(a.sample_order_id, a.id)}>
-                                  <Send className="w-3 h-3 mr-1" /> Send Agreement
+                                <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openSendAgreement(a.sample_order_id, a.id)}>
+                                  <Send className="w-3 h-3 mr-1" /> Log Visit
                                 </Button>
                                 {a.lead?.id && (
-                                  <Button size="sm" variant="outline" className="text-xs h-7 border-warning/40 text-warning hover:bg-warning/10" onClick={() => openReassign(a.lead!.id)}>
+                                  <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(a.lead!.id)}>
                                     Re-assign
                                   </Button>
                                 )}
-                                <Button size="sm" variant="outline" className="text-xs h-7 text-destructive" onClick={() => openNotInterested(a.sample_order_id, a.id)}>
-                                  <XCircle className="w-3 h-3 mr-1" /> Not Interested
+                                <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => openNotInterested(a.sample_order_id, a.id)}>
+                                  <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
                                 </Button>
                               </div>
                             </TableCell>
@@ -1087,10 +1076,10 @@ export default function AgreementsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Not Interested Dialog */}
+      {/* Mark Dropout Dialog */}
       <Dialog open={dropOpen} onOpenChange={open => { if (!open) setDropOpen(false); }}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Not Interested</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Mark Dropout</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
               <Label className="text-xs font-medium">Reason *</Label>
@@ -1123,56 +1112,32 @@ export default function AgreementsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Re-assign Dialog */}
+      {/* Re-assign Dialog - direct agent list */}
       <Dialog open={reassignOpen} onOpenChange={open => { if (!open) setReassignOpen(false); }}>
         <DialogContent className="max-w-sm">
-          {reassignStep === 1 ? (
-            <>
-              <DialogHeader><DialogTitle className="text-base">Re-assign Lead</DialogTitle></DialogHeader>
-              <RadioGroup value={reassignOption} onValueChange={v => setReassignOption(v as any)} className="space-y-3 py-2">
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="call" id="s4-rc" /><Label htmlFor="s4-rc" className="text-sm cursor-pointer">Re-assign: Call</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="visit" id="s4-rv" /><Label htmlFor="s4-rv" className="text-sm cursor-pointer">Re-assign: Visit</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="unassign" id="s4-ru" /><Label htmlFor="s4-ru" className="text-sm cursor-pointer text-destructive">Unassign</Label>
-                </div>
-              </RadioGroup>
-              <DialogFooter>
-                <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-                {reassignOption === "unassign" ? (
-                  <Button size="sm" variant="destructive" onClick={handleConfirmReassign}>Unassign</Button>
-                ) : (
-                  <Button size="sm" onClick={() => setReassignStep(2)}>Next</Button>
-                )}
-              </DialogFooter>
-            </>
-          ) : (
-            <>
-              <DialogHeader><DialogTitle className="text-base">Re-assign To</DialogTitle></DialogHeader>
-              <div className="space-y-3 py-2">
-                <Input placeholder="Search users..." value={reassignUserSearch} onChange={e => setReassignUserSearch(e.target.value)} className="h-8 text-xs" />
-                <div className="max-h-48 overflow-y-auto border rounded-md">
-                  {filteredReassignUsers.length === 0 ? (
-                    <p className="p-3 text-xs text-muted-foreground text-center">No users found</p>
-                  ) : filteredReassignUsers.map(u => (
-                    <button key={u.email}
-                      className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors border-b last:border-b-0 ${reassignTo === u.email ? "bg-primary/10 text-primary" : ""}`}
-                      onClick={() => setReassignTo(u.email!)}>
-                      <span className="font-medium">{u.full_name || u.email}</span>
-                      {u.full_name && <span className="text-muted-foreground ml-2">{u.email}</span>}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" size="sm" onClick={() => setReassignStep(1)}>Back</Button>
-                <Button size="sm" onClick={handleConfirmReassign} disabled={!reassignTo}>Re-assign</Button>
-              </DialogFooter>
-            </>
-          )}
+          <DialogHeader>
+            <DialogTitle className="text-base">Re-assign Lead</DialogTitle>
+            <p className="text-xs text-muted-foreground">Select an agent to re-assign this lead to</p>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Input placeholder="Search agents..." value={reassignUserSearch} onChange={e => setReassignUserSearch(e.target.value)} className="h-8 text-xs" />
+            <div className="max-h-48 overflow-y-auto border rounded-md">
+              {filteredReassignUsers.length === 0 ? (
+                <p className="p-3 text-xs text-muted-foreground text-center">No users found</p>
+              ) : filteredReassignUsers.map(u => (
+                <button key={u.email}
+                  className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors border-b last:border-b-0 ${reassignTo === u.email ? "bg-primary/10 text-primary" : ""}`}
+                  onClick={() => setReassignTo(u.email!)}>
+                  <span className="font-medium">{u.full_name || u.email}</span>
+                  {u.full_name && <span className="text-muted-foreground ml-2">{u.email}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+            <Button size="sm" className="bg-warning hover:bg-warning/90 text-warning-foreground" onClick={handleConfirmReassign} disabled={!reassignTo}>Re-assign</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
