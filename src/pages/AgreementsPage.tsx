@@ -575,13 +575,12 @@ export default function AgreementsPage() {
                             <TableCell className="text-xs text-muted-foreground">
                               {o.delivery_date ? format(new Date(o.delivery_date), "dd MMM yyyy") : "—"}
                             </TableCell>
-                            <TableCell className="text-xs min-w-[70px]">
+                            <TableCell className="text-xs min-w-[70px] py-2">
                               {combos.length > 0 ? (
-                                <div className="flex flex-col gap-0">
+                                <div className="flex flex-col gap-1">
                                   {combos.map((c, i) => (
-                                    <div key={i} className="flex items-center gap-1 border-b border-dashed border-muted last:border-0 py-1">
-                                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-muted text-[9px] font-bold text-muted-foreground shrink-0">{i + 1}</span>
-                                      <span className="text-[11px] font-semibold">{c.qty}</span>
+                                    <div key={i} className={`px-2 py-1 rounded text-[11px] font-semibold ${i % 2 === 0 ? "bg-muted" : "bg-muted/40 border border-border"}`}>
+                                      {c.qty}
                                     </div>
                                   ))}
                                 </div>
@@ -589,13 +588,12 @@ export default function AgreementsPage() {
                                 <span className="text-muted-foreground">{o.sample_qty_units || "—"}</span>
                               )}
                             </TableCell>
-                            <TableCell className="text-xs min-w-[90px]">
+                            <TableCell className="text-xs min-w-[100px] py-2">
                               {combos.length > 0 ? (
-                                <div className="flex flex-col gap-0">
+                                <div className="flex flex-col gap-1">
                                   {combos.map((c, i) => (
-                                    <div key={i} className="flex items-center gap-1 border-b border-dashed border-muted last:border-0 py-1">
-                                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-muted text-[9px] font-bold text-muted-foreground shrink-0">{i + 1}</span>
-                                      <span className="text-[11px] text-muted-foreground">{c.ripeness}</span>
+                                    <div key={i} className={`px-2 py-1 rounded text-[11px] text-muted-foreground ${i % 2 === 0 ? "bg-muted" : "bg-muted/40 border border-border"}`}>
+                                      {c.ripeness}
                                     </div>
                                   ))}
                                 </div>
