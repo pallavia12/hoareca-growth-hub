@@ -238,23 +238,14 @@ export default function LeadMasterPage() {
                     {/* KYC verification tag */}
                     {row.lead && (row.lead as any).verification_status && (() => {
                       const vs = (row.lead as any).verification_status as string;
-                      const vColors: Record<string, string> = {
-                        Verified: "bg-success/10 text-success border-success/20",
-                        Unverified: "bg-warning/10 text-warning border-warning/20",
-                        Duplicate: "bg-destructive/10 text-destructive border-destructive/20",
-                      };
-                      const vIcons: Record<string, React.ReactNode> = {
-                        Verified: <ShieldCheck className="w-2.5 h-2.5 mr-0.5" />,
-                        Unverified: <ShieldAlert className="w-2.5 h-2.5 mr-0.5" />,
-                        Duplicate: <ShieldX className="w-2.5 h-2.5 mr-0.5" />,
-                      };
+                      const vColor = vs === "Verified" ? "text-success" : vs === "Duplicate" ? "text-warning" : "text-destructive";
+                      const vIcon = vs === "Verified" ? <ShieldCheck className="w-3 h-3" /> : vs === "Duplicate" ? <ShieldX className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />;
                       return (
-                        <div className="flex items-center ml-6 mb-1.5">
-                          <Badge variant="outline" className={`text-[10px] flex items-center gap-0.5 ${vColors[vs] || ""}`}>
-                            {vIcons[vs]}KYC: {vs}
-                          </Badge>
+                        <div className={`flex items-center gap-1 ml-6 mb-1 text-[11px] font-medium ${vColor}`}>
+                          {vIcon}
+                          <span>KYC: {vs}</span>
                           {(row.lead as any).verification_note && (
-                            <span className="text-[10px] text-muted-foreground ml-2 truncate max-w-[180px]">{(row.lead as any).verification_note}</span>
+                            <span className="text-muted-foreground font-normal ml-1 truncate max-w-[160px]">— {(row.lead as any).verification_note}</span>
                           )}
                         </div>
                       );
