@@ -555,16 +555,15 @@ export default function AgreementsPage() {
                       <TableHead className="text-xs">Lead Name</TableHead>
                       <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs">Delivery Date</TableHead>
-                      <TableHead className="text-xs">Qty (Units)</TableHead>
-                      <TableHead className="text-xs">Ripeness Stage</TableHead>
+                      <TableHead className="text-xs">Order Details</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {loading ? (
-                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                      {loading ? (
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                     ) : pendingOrders.length === 0 ? (
-                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No pending orders.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No pending orders.</TableCell></TableRow>
                     ) : (
                       pendingOrders.map(o => {
                         const combos = extractSkuCombos(o.remarks);
@@ -575,30 +574,23 @@ export default function AgreementsPage() {
                             <TableCell className="text-xs text-muted-foreground">
                               {o.delivery_date ? format(new Date(o.delivery_date), "dd MMM yyyy") : "—"}
                             </TableCell>
-                            <TableCell className="text-xs min-w-[70px] py-2">
+                            <TableCell className="py-2 min-w-[160px]">
                               {combos.length > 0 ? (
-                                <div className="flex flex-col gap-1">
+                                <div className="flex flex-col divide-y divide-border">
                                   {combos.map((c, i) => (
-                                    <div key={i} className={`px-2 py-1 rounded text-[11px] font-semibold ${i % 2 === 0 ? "bg-muted" : "bg-muted/40 border border-border"}`}>
-                                      {c.qty}
+                                    <div key={i} className="flex items-center gap-2 py-1.5 first:pt-0 last:pb-0">
+                                      <span className="text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded whitespace-nowrap">
+                                        {c.qty} units
+                                      </span>
+                                      <span className="text-muted-foreground text-[10px]">·</span>
+                                      <span className="text-[11px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded whitespace-nowrap">
+                                        {c.ripeness}
+                                      </span>
                                     </div>
                                   ))}
                                 </div>
                               ) : (
-                                <span className="text-muted-foreground">{o.sample_qty_units || "—"}</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-xs min-w-[100px] py-2">
-                              {combos.length > 0 ? (
-                                <div className="flex flex-col gap-1">
-                                  {combos.map((c, i) => (
-                                    <div key={i} className={`px-2 py-1 rounded text-[11px] text-muted-foreground ${i % 2 === 0 ? "bg-muted" : "bg-muted/40 border border-border"}`}>
-                                      {c.ripeness}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
+                                <span className="text-xs text-muted-foreground">{o.sample_qty_units ? `${o.sample_qty_units} units` : "—"}</span>
                               )}
                             </TableCell>
                             <TableCell>
