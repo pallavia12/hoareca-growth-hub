@@ -21,7 +21,7 @@ import { useLeads } from "@/hooks/useLeads";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  Plus, Search, Upload, Users, Download,
+  Plus, Search, Upload, Users, Download, UserPlus, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -433,15 +433,14 @@ export default function ProspectsPage() {
                               {isInProgress ? (
                                 <Button
                                   size="sm"
-                                  variant="outline"
-                                  className="text-xs h-7 border-warning/40 text-warning hover:bg-warning/10"
+                                  className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground"
                                   onClick={() => openReassignDialog(p.id)}
                                 >
-                                  Re-assign
+                                  <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
                                 </Button>
                               ) : (
-                                <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openAssignDialog(p.id)}>
-                                  Assign
+                                <Button size="sm" className="text-xs h-7 bg-primary hover:bg-primary/90 text-primary-foreground" onClick={() => openAssignDialog(p.id)}>
+                                  <UserPlus className="w-3 h-3 mr-1" /> Assign
                                 </Button>
                               )}
                             </TableCell>
