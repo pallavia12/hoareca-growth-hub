@@ -357,7 +357,7 @@ export default function ProspectsPage() {
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="fresh" className="text-xs">Fresh Prospects ({counts.fresh})</TabsTrigger>
           <TabsTrigger value="converted" className="text-xs">Converted ({counts.converted})</TabsTrigger>
-          <TabsTrigger value="dropouts" className="text-xs">Drop-outs ({counts.dropouts})</TabsTrigger>
+          <TabsTrigger value="dropouts" className="text-xs">Dropouts ({counts.dropouts})</TabsTrigger>
         </TabsList>
 
         {/* Filters */}
@@ -494,7 +494,7 @@ export default function ProspectsPage() {
           </Card>
         </TabsContent>
 
-        {/* Drop-outs Tab */}
+        {/* Dropouts Tab */}
         <TabsContent value="dropouts" className="mt-3">
           <Card>
             <CardContent className="p-0">
@@ -505,29 +505,31 @@ export default function ProspectsPage() {
                       <TableHead className="text-xs">Restaurant Name</TableHead>
                       <TableHead className="text-xs">Locality</TableHead>
                       <TableHead className="text-xs">Assigned To</TableHead>
-                      <TableHead className="text-xs">Remarks</TableHead>
-                      <TableHead className="text-xs">Tag</TableHead>
+                      <TableHead className="text-xs">Reason</TableHead>
+                      <TableHead className="text-xs">Info</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loading ? (
                       <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                     ) : droppedProspects.length === 0 ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No drop-outs yet.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No dropouts yet.</TableCell></TableRow>
                     ) : (
-                      droppedProspects.map(p => (
-                        <TableRow key={p.id} className="text-sm">
-                          <TableCell className="font-medium max-w-[200px] truncate">{p.restaurant_name}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{p.mapped_to || "—"}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
-                            {getLeadRemarks(p.id) || "—"}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={`text-[10px] ${tagColors["Dropped"]}`}>Dropped</Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                      droppedProspects.map(p => {
+                        const remarksStr = getLeadRemarks(p.id) || "";
+                        const dropMatch = remarksStr.match(/\[Dropout\]\s*([^:]+)(?::\s*(.*))?/);
+                        const parsedReason = dropMatch ? dropMatch[1].trim() : (remarksStr || "—");
+                        const parsedInfo = dropMatch?.[2]?.trim() || "—";
+                        return (
+                          <TableRow key={p.id} className="text-sm">
+                            <TableCell className="font-medium max-w-[200px] truncate">{p.restaurant_name}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{p.mapped_to || "—"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{parsedReason}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate">{parsedInfo}</TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>

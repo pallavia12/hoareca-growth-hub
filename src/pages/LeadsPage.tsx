@@ -45,7 +45,6 @@ const verificationColors: Record<string, string> = {
   Duplicate: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
-// Simple file upload helper for docs
 async function uploadDoc(file: File, folder: string): Promise<string | null> {
   const ext = file.name.split(".").pop();
   const path = `${folder}/${Date.now()}.${ext}`;
@@ -64,20 +63,31 @@ export default function LeadsPage() {
   const [tab, setTab] = useState<"available" | "revisit" | "dropouts" | "leads">("available");
   const [search, setSearch] = useState("");
   const [filterLocality, setFilterLocality] = useState("");
+  const [filterAgent, setFilterAgent] = useState("");
   const [userPincodes, setUserPincodes] = useState<string[]>([]);
 
   const [createLeadOpen, setCreateLeadOpen] = useState(false);
   const [createLeadProspectId, setCreateLeadProspectId] = useState<string | null>(null);
 
-  const [unsuccessfulOpen, setUnsuccessfulOpen] = useState(false);
-  const [unsuccessfulProspectId, setUnsuccessfulProspectId] = useState<string | null>(null);
-  const [unsuccessfulReason, setUnsuccessfulReason] = useState("");
-  const [unsuccessfulRemarks, setUnsuccessfulRemarks] = useState("");
-  const [unsuccessfulReasons, setUnsuccessfulReasons] = useState<string[]>([]);
+  const [markDropoutOpen, setMarkDropoutOpen] = useState(false);
+  const [markDropoutProspectId, setMarkDropoutProspectId] = useState<string | null>(null);
+  const [dropoutReason, setDropoutReason] = useState("");
+  const [dropoutInfo, setDropoutInfo] = useState("");
+  const [dropoutReasons, setDropoutReasons] = useState<string[]>([]);
+
+  // Re-assign state for step 2
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassignProspectId, setReassignProspectId] = useState<string | null>(null);
+  const [reassignTo, setReassignTo] = useState("");
+  const [reassignUserSearch, setReassignUserSearch] = useState("");
+  const [allUsers, setAllUsers] = useState<{ email: string; full_name: string | null }[]>([]);
 
   useEffect(() => {
     supabase.from("drop_reasons").select("reason_text").in("step_number", [1, 2]).eq("is_active", true)
-      .then(({ data }) => setUnsuccessfulReasons(data?.map(d => d.reason_text) || []));
+      .then(({ data }) => setDropoutReasons(data?.map(d => d.reason_text) || []));
+    supabase.from("profiles").select("email, full_name").then(({ data }) => {
+      if (data) setAllUsers(data.filter(u => u.email));
+    });
   }, []);
 
   useEffect(() => {
@@ -101,20 +111,13 @@ export default function LeadsPage() {
 
   const [addNewLeadOpen, setAddNewLeadOpen] = useState(false);
 
-  // Map pin state
   const [pinLat, setPinLat] = useState<number | null>(null);
   const [pinLng, setPinLng] = useState<number | null>(null);
-
-  // Photo state (optional in Step 2)
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-
-  // KYC states
   const [gstCertUrl, setGstCertUrl] = useState<string | null>(null);
   const [panCardUrl, setPanCardUrl] = useState<string | null>(null);
   const [gstCertUploading, setGstCertUploading] = useState(false);
   const [panCardUploading, setPanCardUploading] = useState(false);
-
-  // Verification dialog
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [verifyResult, setVerifyResult] = useState<"Verified" | "Unverified" | "Duplicate" | null>(null);
   const [selectedVerify, setSelectedVerify] = useState<"Verified" | "Unverified" | "Duplicate">("Verified");
@@ -165,8 +168,9 @@ export default function LeadsPage() {
       list = list.filter(p => p.restaurant_name.toLowerCase().includes(s) || p.locality.toLowerCase().includes(s));
     }
     if (filterLocality && filterLocality !== "all") list = list.filter(p => p.locality === filterLocality);
+    if (filterAgent && filterAgent !== "all") list = list.filter(p => p.mapped_to === filterAgent);
     return list;
-  }, [myProspects, search, filterLocality]);
+  }, [myProspects, search, filterLocality, filterAgent]);
 
   const revisitProspects = useMemo(() => {
     let list = myProspects.filter(p => p.tag === "In Progress" || p.tag === "Rescheduled");
@@ -175,8 +179,9 @@ export default function LeadsPage() {
       list = list.filter(p => p.restaurant_name.toLowerCase().includes(s) || p.locality.toLowerCase().includes(s));
     }
     if (filterLocality && filterLocality !== "all") list = list.filter(p => p.locality === filterLocality);
+    if (filterAgent && filterAgent !== "all") list = list.filter(p => p.mapped_to === filterAgent);
     return list;
-  }, [myProspects, search, filterLocality]);
+  }, [myProspects, search, filterLocality, filterAgent]);
 
   const droppedProspects = useMemo(() => {
     let list = myProspects.filter(p => p.tag === "Dropped");
@@ -185,13 +190,21 @@ export default function LeadsPage() {
       list = list.filter(p => p.restaurant_name.toLowerCase().includes(s) || p.locality.toLowerCase().includes(s));
     }
     if (filterLocality && filterLocality !== "all") list = list.filter(p => p.locality === filterLocality);
+    if (filterAgent && filterAgent !== "all") list = list.filter(p => p.mapped_to === filterAgent);
     return list;
-  }, [myProspects, search, filterLocality]);
+  }, [myProspects, search, filterLocality, filterAgent]);
 
   const localities = useMemo(() => {
     const fromProspects = myProspects.map(p => p.locality);
     const fromLeads = leads.map(l => l.locality);
     return [...new Set([...fromProspects, ...fromLeads])].filter(Boolean).sort();
+  }, [myProspects, leads]);
+
+  const agents = useMemo(() => {
+    const set = new Set<string>();
+    myProspects.forEach(p => { if (p.mapped_to) set.add(p.mapped_to); });
+    leads.forEach(l => { if (l.created_by) set.add(l.created_by); });
+    return [...set].sort();
   }, [myProspects, leads]);
 
   const filteredLeads = useMemo(() => {
@@ -208,8 +221,9 @@ export default function LeadsPage() {
       );
     }
     if (filterLocality && filterLocality !== "all") list = list.filter(l => l.locality === filterLocality);
+    if (filterAgent && filterAgent !== "all") list = list.filter(l => l.created_by === filterAgent);
     return list;
-  }, [leads, userRole, userPincodes, search, filterLocality]);
+  }, [leads, userRole, userPincodes, search, filterLocality, filterAgent]);
 
   const counts = useMemo(() => ({
     available: myProspects.filter(p => !p.tag || p.tag === "New").length,
@@ -311,7 +325,6 @@ export default function LeadsPage() {
     const ok = await addLead(payload);
     if (ok) {
       if (createLeadProspectId) await updateProspect(createLeadProspectId, { tag: "Qualified" });
-      // Sync appointment to calendar
       if (payload.appointment_date) {
         const { data: newLead } = await supabase.from("leads").select("id").eq("client_name", payload.client_name).order("created_at", { ascending: false }).limit(1).maybeSingle();
         if (newLead?.id) await syncAppointment(newLead.id, payload.client_name, payload.appointment_date, payload.appointment_time);
@@ -339,7 +352,6 @@ export default function LeadsPage() {
     const ok = await addLead(payload);
     if (ok) {
       if (createLeadProspectId) await updateProspect(createLeadProspectId, { tag: "In Progress" });
-      // Sync revisit appointment to calendar
       if (apptDate) {
         const { data: newLead } = await supabase.from("leads").select("id").eq("client_name", payload.client_name).order("created_at", { ascending: false }).limit(1).maybeSingle();
         if (newLead?.id) await syncAppointment(newLead.id, payload.client_name, apptDate, revisitTime || null, "Visit");
@@ -355,31 +367,49 @@ export default function LeadsPage() {
     }
   };
 
-  const handleLogUnsuccessful = async () => {
-    if (!unsuccessfulProspectId || !unsuccessfulReason || !unsuccessfulRemarks) return;
-    const isDrop = unsuccessfulReason === "Drop";
-    const newTag = isDrop ? "Dropped" : "Rescheduled";
+  const handleMarkDropout = async () => {
+    if (!markDropoutProspectId || !dropoutReason) return;
+    const isDrop = dropoutReason === "Drop" || !dropoutReasons.includes(dropoutReason) || dropoutReason === dropoutReason;
+    const newTag = "Dropped";
 
-    const existingLead = getLeadForProspect(unsuccessfulProspectId);
+    const existingLead = getLeadForProspect(markDropoutProspectId);
     if (existingLead) {
       const field = getIncrementField();
-      await updateLead(existingLead.id, { [field]: ((existingLead as any)[field] || 0) + 1 });
+      const remarks = `[Dropout] ${dropoutReason}${dropoutInfo ? ": " + dropoutInfo : ""}`;
+      await updateLead(existingLead.id, { [field]: ((existingLead as any)[field] || 0) + 1, remarks });
     }
 
-    await updateProspect(unsuccessfulProspectId, { tag: newTag });
-    toast({ title: isDrop ? "Prospect dropped" : "Prospect rescheduled" });
-    setUnsuccessfulOpen(false);
-    setUnsuccessfulProspectId(null);
-    setUnsuccessfulReason("");
-    setUnsuccessfulRemarks("");
+    await updateProspect(markDropoutProspectId, { tag: newTag });
+    toast({ title: "Prospect marked as dropout" });
+    setMarkDropoutOpen(false);
+    setMarkDropoutProspectId(null);
+    setDropoutReason("");
+    setDropoutInfo("");
+  };
+
+  const filteredReassignUsers = useMemo(() => {
+    const s = reassignUserSearch.toLowerCase();
+    return allUsers.filter(u => !s || (u.full_name || "").toLowerCase().includes(s) || (u.email || "").toLowerCase().includes(s));
+  }, [allUsers, reassignUserSearch]);
+
+  const openReassignDialog = (prospectId: string) => {
+    setReassignProspectId(prospectId);
+    setReassignTo("");
+    setReassignUserSearch("");
+    setReassignOpen(true);
+  };
+
+  const handleConfirmReassign = async () => {
+    if (!reassignProspectId || !reassignTo) return;
+    await updateProspect(reassignProspectId, { status: "assigned", mapped_to: reassignTo, tag: "In Progress" });
+    toast({ title: "Prospect re-assigned successfully" });
+    setReassignOpen(false);
   };
 
   const canVerify = !!(form.gst_id || form.pan_number);
 
   const handleVerifyClick = () => {
     if (!canVerify) return;
-    // Simulate API: if both GST and PAN provided → Verified, only one → Unverified, none → N/A
-    // For demo: toggle through states to simulate different API responses
     const nextResult: "Verified" | "Unverified" | "Duplicate" =
       !verifyResult ? "Verified" :
       verifyResult === "Verified" ? "Unverified" :
@@ -456,26 +486,14 @@ export default function LeadsPage() {
     <div className="space-y-3">
       <p className="text-xs font-semibold text-foreground uppercase tracking-wider border-b pb-1">KYC / Identification</p>
 
-      {/* GST row */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label className="text-xs">GST Certificate</Label>
           <div className="relative">
-            <input
-              type="file"
-              accept=".png,.jpg,.jpeg,.pdf"
-              className="hidden"
-              id="gst-cert-input"
-              onChange={e => e.target.files?.[0] && handleDocUpload(e.target.files[0], "gst")}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full text-xs h-9 justify-start"
-              onClick={() => document.getElementById("gst-cert-input")?.click()}
-              disabled={gstCertUploading}
-            >
+            <input type="file" accept=".png,.jpg,.jpeg,.pdf" className="hidden" id="gst-cert-input"
+              onChange={e => e.target.files?.[0] && handleDocUpload(e.target.files[0], "gst")} />
+            <Button type="button" variant="outline" size="sm" className="w-full text-xs h-9 justify-start"
+              onClick={() => document.getElementById("gst-cert-input")?.click()} disabled={gstCertUploading}>
               <Upload className="w-3 h-3 mr-1.5" />
               {gstCertUploading ? "Uploading..." : gstCertUrl ? "✓ Uploaded" : "Upload / Capture"}
             </Button>
@@ -487,26 +505,14 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      {/* PAN row */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label className="text-xs">PAN Card</Label>
           <div className="relative">
-            <input
-              type="file"
-              accept=".png,.jpg,.jpeg,.pdf"
-              className="hidden"
-              id="pan-card-input"
-              onChange={e => e.target.files?.[0] && handleDocUpload(e.target.files[0], "pan")}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full text-xs h-9 justify-start"
-              onClick={() => document.getElementById("pan-card-input")?.click()}
-              disabled={panCardUploading}
-            >
+            <input type="file" accept=".png,.jpg,.jpeg,.pdf" className="hidden" id="pan-card-input"
+              onChange={e => e.target.files?.[0] && handleDocUpload(e.target.files[0], "pan")} />
+            <Button type="button" variant="outline" size="sm" className="w-full text-xs h-9 justify-start"
+              onClick={() => document.getElementById("pan-card-input")?.click()} disabled={panCardUploading}>
               <Upload className="w-3 h-3 mr-1.5" />
               {panCardUploading ? "Uploading..." : panCardUrl ? "✓ Uploaded" : "Upload / Capture"}
             </Button>
@@ -518,16 +524,9 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      {/* Verify CTA */}
       <div className="pt-1">
-        <Button
-          type="button"
-          size="sm"
-          variant={canVerify ? "default" : "outline"}
-          className="text-xs"
-          onClick={handleVerifyClick}
-          disabled={!canVerify}
-        >
+        <Button type="button" size="sm" variant={canVerify ? "default" : "outline"} className="text-xs"
+          onClick={handleVerifyClick} disabled={!canVerify}>
           <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
           Verify Identity
         </Button>
@@ -538,7 +537,6 @@ export default function LeadsPage() {
 
   const renderLeadForm = () => (
     <div className="grid gap-4 py-2 max-h-[60vh] overflow-y-auto">
-      {/* Section 1: Basic Info */}
       <div className="space-y-3">
         <p className="text-xs font-semibold text-foreground uppercase tracking-wider border-b pb-1">Basic Info</p>
         <div className="space-y-1">
@@ -555,20 +553,15 @@ export default function LeadsPage() {
             <Input placeholder="+91..." value={form.contact_number} onChange={e => setForm(f => ({ ...f, contact_number: e.target.value }))} />
           </div>
         </div>
-
-        {/* Map Pin Picker */}
         {(createLeadOpen || addNewLeadOpen) && (
           <MapPinPicker lat={pinLat} lng={pinLng} onLocationSelect={(lat, lng) => { setPinLat(lat); setPinLng(lng); }} />
         )}
       </div>
 
-      {/* Photo Capture (optional) */}
       <PhotoCapture label="Outlet Photo" required={false} value={photoUrl} onCapture={setPhotoUrl} />
 
-      {/* KYC Section */}
       {renderKycSection()}
 
-      {/* Section 2: Contact Details */}
       <div className="space-y-3">
         <p className="text-xs font-semibold text-foreground uppercase tracking-wider border-b pb-1">Contact Details</p>
         <div className="grid grid-cols-2 gap-3">
@@ -605,7 +598,6 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      {/* Section 3: Behaviour */}
       <div className="space-y-3">
         <p className="text-xs font-semibold text-foreground uppercase tracking-wider border-b pb-1">Behaviour</p>
         <div className="grid grid-cols-2 gap-3">
@@ -639,7 +631,6 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      {/* Section 4: Appointment */}
       <div className="space-y-3">
         <p className="text-xs font-semibold text-foreground uppercase tracking-wider border-b pb-1">Appointment</p>
         <div className="grid grid-cols-2 gap-3">
@@ -654,7 +645,6 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      {/* Section 5: Remarks */}
       <div className="space-y-1">
         <Label className="text-xs">Remarks</Label>
         <Textarea placeholder="Notes..." value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={2} />
@@ -687,20 +677,22 @@ export default function LeadsPage() {
           )}
         </TableCell>
         <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
-        <TableCell className="text-xs font-mono hidden sm:table-cell">{p.pincode}</TableCell>
+        <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{p.mapped_to || "—"}</TableCell>
+        <TableCell className="text-xs font-mono hidden md:table-cell">{p.pincode}</TableCell>
         {tab === "revisit" && (
           <TableCell className="text-xs text-muted-foreground">{callCount + visitCount}</TableCell>
         )}
         <TableCell>
           {showActions ? (
             <div className="flex gap-1 flex-wrap">
-              <Button size="sm" className="text-xs h-7" onClick={() => openCreateLead(p.id)}>Create Lead</Button>
-              <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => {
-                setUnsuccessfulProspectId(p.id);
-                setUnsuccessfulReason("");
-                setUnsuccessfulRemarks("");
-                setUnsuccessfulOpen(true);
-              }}>Log Unsuccessful</Button>
+              <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openCreateLead(p.id)}>Log Visit</Button>
+              <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassignDialog(p.id)}>Re-assign</Button>
+              <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
+                setMarkDropoutProspectId(p.id);
+                setDropoutReason("");
+                setDropoutInfo("");
+                setMarkDropoutOpen(true);
+              }}>Mark Dropout</Button>
             </div>
           ) : (
             <span className="text-xs text-muted-foreground">—</span>
@@ -724,9 +716,9 @@ export default function LeadsPage() {
 
       <Tabs value={tab} onValueChange={v => setTab(v as any)}>
         <TabsList className="w-full sm:w-auto flex-wrap h-auto gap-1">
-          <TabsTrigger value="available" className="text-xs">Available Prospects ({counts.available})</TabsTrigger>
+          <TabsTrigger value="available" className="text-xs">Assigned Prospects ({counts.available})</TabsTrigger>
           <TabsTrigger value="revisit" className="text-xs">Revisit ({counts.revisit})</TabsTrigger>
-          <TabsTrigger value="dropouts" className="text-xs">Drop-outs ({counts.dropouts})</TabsTrigger>
+          <TabsTrigger value="dropouts" className="text-xs">Dropouts ({counts.dropouts})</TabsTrigger>
           <TabsTrigger value="leads" className="text-xs">All Leads ({counts.leads})</TabsTrigger>
         </TabsList>
 
@@ -742,23 +734,31 @@ export default function LeadsPage() {
               {localities.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
             </SelectContent>
           </Select>
+          <Select value={filterAgent} onValueChange={setFilterAgent}>
+            <SelectTrigger className="w-full sm:w-[160px] h-9 text-xs"><SelectValue placeholder="All Agents" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Agents</SelectItem>
+              {agents.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* Available */}
+        {/* Assigned Prospects */}
         <TabsContent value="available" className="mt-3">
           <Card><CardContent className="p-0"><div className="overflow-x-auto">
             <Table>
               <TableHeader><TableRow>
                 <TableHead className="text-xs">Name</TableHead>
                 <TableHead className="text-xs">Locality</TableHead>
-                <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
+                <TableHead className="text-xs hidden sm:table-cell">Assigned To</TableHead>
+                <TableHead className="text-xs hidden md:table-cell">Pincode</TableHead>
                 <TableHead className="text-xs">Actions</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                 ) : availableProspects.length === 0 ? (
-                  <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">No available prospects assigned to you.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No assigned prospects.</TableCell></TableRow>
                 ) : availableProspects.map(p => renderProspectRow(p, true))}
               </TableBody>
             </Table>
@@ -772,15 +772,16 @@ export default function LeadsPage() {
               <TableHeader><TableRow>
                 <TableHead className="text-xs">Name</TableHead>
                 <TableHead className="text-xs">Locality</TableHead>
-                <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
-                <TableHead className="text-xs">Attempts</TableHead>
+                <TableHead className="text-xs hidden sm:table-cell">Assigned To</TableHead>
+                <TableHead className="text-xs hidden md:table-cell">Pincode</TableHead>
+                <TableHead className="text-xs">Visits</TableHead>
                 <TableHead className="text-xs">Actions</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                 ) : revisitProspects.length === 0 ? (
-                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No prospects in revisit queue.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No prospects in revisit queue.</TableCell></TableRow>
                 ) : revisitProspects.map(p => renderProspectRow(p, true))}
               </TableBody>
             </Table>
@@ -794,35 +795,42 @@ export default function LeadsPage() {
               <TableHeader><TableRow>
                 <TableHead className="text-xs">Name</TableHead>
                 <TableHead className="text-xs">Locality</TableHead>
-                <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
-                <TableHead className="text-xs">Attempts</TableHead>
-                <TableHead className="text-xs">Remarks</TableHead>
+                <TableHead className="text-xs hidden sm:table-cell">Assigned To</TableHead>
+                <TableHead className="text-xs hidden md:table-cell">Pincode</TableHead>
+                <TableHead className="text-xs">Visits</TableHead>
+                <TableHead className="text-xs">Reason</TableHead>
                 <TableHead className="text-xs">Info</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                 ) : droppedProspects.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No dropped prospects.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground text-sm py-8">No dropouts.</TableCell></TableRow>
                 ) : droppedProspects.map(p => {
                   const lead = getLeadForProspect(p.id);
                   const callCount = lead?.call_count || 0;
                   const visitCount = lead?.visit_count || 0;
                   const totalAttempts = callCount + visitCount;
+                  // parse reason and info from remarks
+                  const remarksStr = lead?.remarks || "";
+                  const dropMatch = remarksStr.match(/\[Dropout\]\s*([^:]+)(?::\s*(.*))?/);
+                  const parsedReason = dropMatch ? dropMatch[1].trim() : "—";
+                  const parsedInfo = dropMatch?.[2]?.trim() || "—";
                   return (
                     <TableRow key={p.id} className="text-sm">
                       <TableCell className="font-medium max-w-[180px] truncate">{p.restaurant_name}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{p.locality}</TableCell>
-                      <TableCell className="text-xs font-mono hidden sm:table-cell">{p.pincode}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{p.mapped_to || "—"}</TableCell>
+                      <TableCell className="text-xs font-mono hidden md:table-cell">{p.pincode}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          {callCount > 0 && <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/20">{callCount} {callCount === 1 ? "call" : "calls"}</Badge>}
-                          {visitCount > 0 && <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">{visitCount} {visitCount === 1 ? "visit" : "visits"}</Badge>}
+                          {callCount > 0 && <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/20">{callCount}c</Badge>}
+                          {visitCount > 0 && <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">{visitCount}v</Badge>}
                           {totalAttempts === 0 && <span className="text-xs text-muted-foreground">—</span>}
                         </div>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{lead?.remarks || "—"}</TableCell>
-                      <TableCell><Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">Dropped</Badge></TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{parsedReason}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate">{parsedInfo}</TableCell>
                     </TableRow>
                   );
                 })}
@@ -838,21 +846,23 @@ export default function LeadsPage() {
               <TableHeader><TableRow>
                 <TableHead className="text-xs">Name</TableHead>
                 <TableHead className="text-xs">Locality</TableHead>
+                <TableHead className="text-xs hidden sm:table-cell">Assigned To</TableHead>
                 <TableHead className="text-xs hidden sm:table-cell">Pincode</TableHead>
                 <TableHead className="text-xs">KYC</TableHead>
                 <TableHead className="text-xs">Visits</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                 ) : filteredLeads.length === 0 ? (
-                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No leads found.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No leads found.</TableCell></TableRow>
                 ) : filteredLeads.map(l => {
                   const vs = (l as any).verification_status as string | null;
                   return (
                     <TableRow key={l.id} className="text-sm">
                       <TableCell className="font-medium max-w-[180px] truncate">{l.client_name}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{l.locality || "—"}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{l.created_by || "—"}</TableCell>
                       <TableCell className="text-xs font-mono hidden sm:table-cell">{l.pincode}</TableCell>
                       <TableCell>
                         {vs ? (
@@ -861,8 +871,8 @@ export default function LeadsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          {(l.visit_count || 0) > 0 && <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">{l.visit_count} visit{(l.visit_count || 0) === 1 ? "" : "s"}</Badge>}
-                          {(l.call_count || 0) > 0 && <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/20">{l.call_count} call{(l.call_count || 0) === 1 ? "" : "s"}</Badge>}
+                          {(l.visit_count || 0) > 0 && <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">{l.visit_count}v</Badge>}
+                          {(l.call_count || 0) > 0 && <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/20">{l.call_count}c</Badge>}
                           {((l.visit_count || 0) + (l.call_count || 0)) === 0 && <span className="text-xs text-muted-foreground">—</span>}
                         </div>
                       </TableCell>
@@ -878,7 +888,7 @@ export default function LeadsPage() {
       {/* Create Lead Dialog */}
       <Dialog open={createLeadOpen} onOpenChange={open => { if (!open) { setCreateLeadOpen(false); resetForm(); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Create Lead</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Log Visit / Create Lead</DialogTitle></DialogHeader>
           {renderLeadForm()}
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" size="sm" onClick={() => setIncompleteOpen(true)} disabled={!form.client_name || !form.pincode}>
@@ -886,7 +896,7 @@ export default function LeadsPage() {
             </Button>
             <div className="flex gap-2">
               <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-              <Button size="sm" onClick={handleSaveLead} disabled={!form.client_name || !form.pincode}>Save Lead</Button>
+              <Button size="sm" className="bg-success hover:bg-success/90 text-success-foreground" onClick={handleSaveLead} disabled={!form.client_name || !form.pincode}>Log Visit</Button>
             </div>
           </DialogFooter>
         </DialogContent>
@@ -903,7 +913,7 @@ export default function LeadsPage() {
             </Button>
             <div className="flex gap-2">
               <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-              <Button size="sm" onClick={handleSaveLead} disabled={!form.client_name || !form.pincode}>Save Lead</Button>
+              <Button size="sm" className="bg-success hover:bg-success/90 text-success-foreground" onClick={handleSaveLead} disabled={!form.client_name || !form.pincode}>Log Visit</Button>
             </div>
           </DialogFooter>
         </DialogContent>
@@ -929,34 +939,69 @@ export default function LeadsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Log Unsuccessful */}
-      <Dialog open={unsuccessfulOpen} onOpenChange={open => { if (!open) { setUnsuccessfulOpen(false); setUnsuccessfulProspectId(null); } }}>
+      {/* Mark Dropout Dialog */}
+      <Dialog open={markDropoutOpen} onOpenChange={open => { if (!open) { setMarkDropoutOpen(false); setMarkDropoutProspectId(null); } }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle className="text-base">Log Unsuccessful Attempt</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="text-base">Mark Dropout</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
               <Label className="text-xs">Reason *</Label>
-              <RadioGroup value={unsuccessfulReason} onValueChange={setUnsuccessfulReason} className="space-y-2">
-                {unsuccessfulReasons.map((reason, i) => (
+              <RadioGroup value={dropoutReason} onValueChange={setDropoutReason} className="space-y-2">
+                {dropoutReasons.map((reason, i) => (
                   <div key={reason} className="flex items-center space-x-2">
-                    <RadioGroupItem value={reason} id={`reason-${i}`} />
-                    <Label htmlFor={`reason-${i}`} className="text-sm">{reason}</Label>
+                    <RadioGroupItem value={reason} id={`dropout-reason-${i}`} />
+                    <Label htmlFor={`dropout-reason-${i}`} className="text-sm">{reason}</Label>
                   </div>
                 ))}
                 <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="Drop" id="reason-drop" />
-                  <Label htmlFor="reason-drop" className="text-sm">Drop</Label>
+                  <RadioGroupItem value="Drop" id="dropout-reason-drop" />
+                  <Label htmlFor="dropout-reason-drop" className="text-sm">Drop</Label>
                 </div>
               </RadioGroup>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Remarks *</Label>
-              <Textarea placeholder="Brief notes..." rows={2} value={unsuccessfulRemarks} onChange={e => setUnsuccessfulRemarks(e.target.value)} />
+              <Label className="text-xs">Additional Info</Label>
+              <Textarea placeholder="Brief notes..." rows={2} value={dropoutInfo} onChange={e => setDropoutInfo(e.target.value)} />
             </div>
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" onClick={handleLogUnsuccessful} disabled={!unsuccessfulReason || !unsuccessfulRemarks}>Confirm</Button>
+            <Button size="sm" className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={handleMarkDropout} disabled={!dropoutReason}>Mark Dropout</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Re-assign Dialog - direct agent list */}
+      <Dialog open={reassignOpen} onOpenChange={open => { if (!open) setReassignOpen(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">Re-assign Prospect</DialogTitle>
+            <p className="text-xs text-muted-foreground">Select an agent to re-assign this prospect to</p>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Input placeholder="Search agents..." value={reassignUserSearch} onChange={e => setReassignUserSearch(e.target.value)} className="h-8 text-xs" />
+            <div className="max-h-48 overflow-y-auto border rounded-md">
+              {filteredReassignUsers.length === 0 ? (
+                <p className="p-3 text-xs text-muted-foreground text-center">No users found</p>
+              ) : (
+                filteredReassignUsers.map(u => (
+                  <button
+                    key={u.email}
+                    className={cn("w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors border-b last:border-b-0",
+                      reassignTo === u.email && "bg-primary/10 text-primary"
+                    )}
+                    onClick={() => setReassignTo(u.email!)}
+                  >
+                    <span className="font-medium">{u.full_name || u.email}</span>
+                    {u.full_name && <span className="text-muted-foreground ml-2">{u.email}</span>}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+            <Button size="sm" className="bg-warning hover:bg-warning/90 text-warning-foreground" onClick={handleConfirmReassign} disabled={!reassignTo}>Re-assign</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
