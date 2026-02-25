@@ -28,7 +28,7 @@ import { useLeads } from "@/hooks/useLeads";
 import { useToast } from "@/hooks/use-toast";
 import {
   Search, CalendarIcon, Send, RotateCcw, XCircle, AlertTriangle, Truck, Clock,
-  UserCheck, RefreshCw,
+  UserCheck, RefreshCw, CheckCircle2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -555,15 +555,16 @@ export default function AgreementsPage() {
                       <TableHead className="text-xs">Lead Name</TableHead>
                       <TableHead className="text-xs">Assigned To</TableHead>
                       <TableHead className="text-xs">Delivery Date</TableHead>
-                      <TableHead className="text-xs">Qty (units)</TableHead>
+                      <TableHead className="text-xs">Qty (Units)</TableHead>
+                      <TableHead className="text-xs">Ripeness Stage</TableHead>
                       <TableHead className="text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loading ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">Loading...</TableCell></TableRow>
                     ) : pendingOrders.length === 0 ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No pending orders.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-8">No pending orders.</TableCell></TableRow>
                     ) : (
                       pendingOrders.map(o => {
                         const combos = extractSkuCombos(o.remarks);
@@ -578,14 +579,22 @@ export default function AgreementsPage() {
                               {combos.length > 0 ? (
                                 <div className="space-y-0.5">
                                   {combos.map((c, i) => (
-                                    <div key={i} className="text-[11px]">
-                                      <span className="font-medium">{c.qty}</span>
-                                      <span className="text-muted-foreground ml-1">({c.ripeness})</span>
-                                    </div>
+                                    <div key={i} className="text-[11px] font-medium">{c.qty}</div>
                                   ))}
                                 </div>
                               ) : (
                                 <span className="text-muted-foreground">{o.sample_qty_units || "—"}</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {combos.length > 0 ? (
+                                <div className="space-y-0.5">
+                                  {combos.map((c, i) => (
+                                    <div key={i} className="text-[11px] text-muted-foreground">{c.ripeness}</div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
                               )}
                             </TableCell>
                             <TableCell>
@@ -642,7 +651,7 @@ export default function AgreementsPage() {
                           <TableCell>
                             <div className="flex gap-1 flex-wrap">
                               <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openSendAgreement(item.orderId, item.agreementId)}>
-                                <Send className="w-3 h-3 mr-1" /> Log Visit
+                                <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
                               </Button>
                               <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(item.lead?.id || "")}>
                                 <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
@@ -694,7 +703,7 @@ export default function AgreementsPage() {
                             <TableCell>
                               <div className="flex gap-1 flex-wrap">
                                 <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openSendAgreement(a.sample_order_id, a.id)}>
-                                  <Send className="w-3 h-3 mr-1" /> Log Visit
+                                  <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
                                 </Button>
                                 {a.lead?.id && (
                                   <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(a.lead!.id)}>

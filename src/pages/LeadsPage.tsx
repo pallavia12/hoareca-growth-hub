@@ -24,7 +24,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Plus, Search, CalendarIcon, ShieldCheck, ShieldAlert, ShieldX, Upload,
+  Plus, Search, CalendarIcon, ShieldCheck, ShieldAlert, ShieldX, Upload, CheckCircle2, RefreshCw, XCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -685,14 +685,14 @@ export default function LeadsPage() {
         <TableCell>
           {showActions ? (
             <div className="flex gap-1 flex-wrap">
-              <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openCreateLead(p.id)}>Log Visit</Button>
-              <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassignDialog(p.id)}>Re-assign</Button>
+              <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openCreateLead(p.id)}><CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit</Button>
+              <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassignDialog(p.id)}><RefreshCw className="w-3 h-3 mr-1" /> Re-assign</Button>
               <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
                 setMarkDropoutProspectId(p.id);
                 setDropoutReason("");
                 setDropoutInfo("");
                 setMarkDropoutOpen(true);
-              }}>Mark Dropout</Button>
+              }}><XCircle className="w-3 h-3 mr-1" /> Mark Dropout</Button>
             </div>
           ) : (
             <span className="text-xs text-muted-foreground">—</span>
