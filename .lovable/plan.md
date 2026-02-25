@@ -1,50 +1,48 @@
 
+## Changes: Log Visit Color + Qty/Ripeness UI Improvement
 
-# Fix: Replace react-leaflet with vanilla Leaflet to eliminate crashes
+### 1. Log Visit Color — `#005c00`
 
-## Problem
-The `react-leaflet` library (even v4.2.1) conflicts with Radix UI Dialog portals, causing a `render2 is not a function` crash whenever the map is rendered inside a dialog. This is a fundamental incompatibility between react-leaflet's React context system and how Radix portals mount components.
+All "Log Visit" buttons currently use `bg-success` (the CSS variable `--success: 122 39% 49%`). The user wants `#005c00` (a darker forest green).
 
-## Solution
-Remove `react-leaflet` entirely and rewrite `MapPinPicker` using the **vanilla Leaflet JS API** with a `useRef` + `useEffect` pattern. This completely sidesteps React context issues since the map is managed imperatively via DOM refs, not through React's rendering pipeline.
+**Approach**: Rather than using arbitrary inline styles scattered across 3 files, update the `--success` CSS variable in `src/index.css` to the equivalent HSL of `#005c00`:
+- `#005c00` → HSL approximately `120, 100%, 18%`
 
-The map will be scoped to Bangalore city with bounded panning.
+This means updating one line in `src/index.css` and all `bg-success` buttons (Log Visit across all Steps 2–4) will automatically pick it up.
 
-## Changes
+> Note: The sidebar background currently also uses a similar green. Only the `--success` token will be changed (not the sidebar tokens), so there should be no side effects on the sidebar.
 
-### 1. Rewrite `src/components/MapPinPicker.tsx`
-- Remove all `react-leaflet` imports (`MapContainer`, `TileLayer`, `Marker`, `useMapEvents`)
-- Use a `div ref` and initialize the Leaflet map with `L.map()` inside a `useEffect`
-- Set `maxBounds` to Bangalore city area (approx 12.75-13.18 lat, 77.35-77.85 lng)
-- Handle click events via `map.on('click', ...)` instead of `useMapEvents`
-- Manage the marker imperatively with `L.marker()` add/remove
-- Properly clean up with `map.remove()` on unmount
+---
 
-### 2. Remove `react-leaflet` dependency
-- Remove `react-leaflet` from `package.json`
-- Keep `leaflet` and `@types/leaflet` (still needed)
+### 2. Qty (Units) + Ripeness Stage — Improved UI in Step 4 Pending Orders
 
-### 3. Simplify `src/pages/LeadsPage.tsx`
-- Remove `lazy()` and `Suspense` wrapper since the vanilla Leaflet component won't have context issues
-- Use a normal import for `MapPinPicker`
-- Keep the conditional render `{(createLeadOpen || addNewLeadOpen) && <MapPinPicker ... />}` as a minor optimization
+**Problem**: The two columns currently list qty values and ripeness values independently with only `space-y-0.5` spacing. When multiple combos exist (e.g., 3 entries), there's no visual demarcation between rows — they blur together.
 
-## Technical Details
+**Solution**: Render each combo as a compact numbered **pill/tag row** inside a single merged approach — but since the user asked to keep two columns (Qty and Ripeness), we'll use **indexed mini-badges** per combo that clearly delineate each row:
 
-The rewritten MapPinPicker will look roughly like:
-
-```text
-useEffect(() => {
-  const map = L.map(mapRef.current, {
-    center: [12.9716, 77.5946],
-    zoom: 13,
-    maxBounds: [[12.75, 77.35], [13.18, 77.85]]
-  });
-  L.tileLayer('https://...').addTo(map);
-  map.on('click', (e) => onLocationSelect(e.latlng.lat, e.latlng.lng));
-  return () => map.remove();
-}, []);
+Each combo will be rendered as a small badge like:
+```
+① 10     ① Stage 3
+② 5      ② Stage 1
+③ 8      ③ Stage 5
 ```
 
-This pattern is fully compatible with Radix Dialog portals because no React context providers are involved.
+Using small numbered circles (1, 2, 3...) as inline prefixes in each row, with a subtle `border-b` separator between combos, or light alternating row styling.
 
+**Technical implementation**:
+- Wrap each combo item in a `div` with `border-b border-dashed border-muted last:border-0 py-0.5` so each line is visually separated.
+- Add a small inline number badge `(i+1)` prefix in `text-[10px] bg-muted rounded-full w-4 h-4` to index the combo.
+- Keep both columns in sync — the index number acts as the visual link between Qty and Ripeness cells.
+
+**Mobile readability**: The columns will use `min-w-[60px]` to prevent collapsing, and the table already has `overflow-x-auto`.
+
+---
+
+### Files to Edit
+
+| File | Change |
+|---|---|
+| `src/index.css` | Update `--success` HSL to match `#005c00` |
+| `src/pages/AgreementsPage.tsx` | Improve Qty + Ripeness cell rendering in Pending Orders table |
+
+No database changes required.
