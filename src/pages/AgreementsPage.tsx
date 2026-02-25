@@ -579,11 +579,11 @@ export default function AgreementsPage() {
                                 <div className="flex flex-col divide-y divide-border">
                                   {combos.map((c, i) => (
                                     <div key={i} className="flex items-center gap-2 py-1.5 first:pt-0 last:pb-0">
-                                      <span className="text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded whitespace-nowrap">
+                                      <span className="text-[11px] font-semibold text-foreground whitespace-nowrap">
                                         {c.qty} units
                                       </span>
                                       <span className="text-muted-foreground text-[10px]">·</span>
-                                      <span className="text-[11px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded whitespace-nowrap">
+                                      <span className="text-[11px] text-muted-foreground whitespace-nowrap">
                                         {c.ripeness}
                                       </span>
                                     </div>
