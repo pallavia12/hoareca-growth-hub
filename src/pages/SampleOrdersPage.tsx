@@ -365,33 +365,44 @@ export default function SampleOrdersPage() {
     return { reason: "—", info: remarks };
   };
 
-  const renderScheduledRow = (leadId: string, clientName: string, pmName: string | null, visitDate: string | null, assignedTo: string | null, orderId?: string) => (
-    <TableRow key={orderId || leadId} className="text-sm">
-      <TableCell className="font-medium max-w-[180px] truncate">{clientName}</TableCell>
-      <TableCell className="text-xs text-muted-foreground">{pmName || "—"}</TableCell>
-      <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{visitDate ? format(new Date(visitDate), "dd MMM") : "—"}</TableCell>
-      <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{assignedTo || "—"}</TableCell>
-      <TableCell>
-        <div className="flex gap-1 flex-wrap">
-          <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openLogVisit(leadId, orderId)}>
-            <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
-          </Button>
-          <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(leadId)}>
-            <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
-          </Button>
-          <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
-            setDropLeadId(leadId);
-            setDropOrderId(orderId || null);
-            setDropReason("");
-            setDropRemarks("");
-            setDropOpen(true);
-          }}>
-            <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
-  );
+  const renderScheduledRow = (leadId: string, clientName: string, pmName: string | null, visitDate: string | null, assignedTo: string | null, orderId?: string) => {
+    const isAssignedToMe = assignedTo === user?.email || (user as any)?.role === "admin";
+    // Check admin via leads data
+    const lead = leads.find(l => l.id === leadId);
+    const assignedToMe = lead ? (lead.created_by === user?.email) : (assignedTo === user?.email);
+    return (
+      <TableRow key={orderId || leadId} className="text-sm">
+        <TableCell className="font-medium max-w-[180px] truncate">{clientName}</TableCell>
+        <TableCell className="text-xs text-muted-foreground">{pmName || "—"}</TableCell>
+        <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{visitDate ? format(new Date(visitDate), "dd MMM") : "—"}</TableCell>
+        <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{assignedTo || "—"}</TableCell>
+        <TableCell>
+          <div className="flex gap-1 flex-wrap">
+            {assignedToMe ? (
+              <>
+                <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openLogVisit(leadId, orderId)}>
+                  <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
+                </Button>
+                <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
+                  setDropLeadId(leadId);
+                  setDropOrderId(orderId || null);
+                  setDropReason("");
+                  setDropRemarks("");
+                  setDropOpen(true);
+                }}>
+                  <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
+                </Button>
+              </>
+            ) : (
+              <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(leadId)}>
+                <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
+              </Button>
+            )}
+          </div>
+        </TableCell>
+      </TableRow>
+    );
+  };
 
   const addSkuRow = () => setSkuRows(prev => [...prev, { quantity: "", ripeness_stage: "" }]);
   const removeSkuRow = (idx: number) => setSkuRows(prev => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev);
@@ -575,23 +586,28 @@ export default function SampleOrdersPage() {
                           <TableCell className="text-xs text-muted-foreground">{o.lead?.visit_count || 0}</TableCell>
                           <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{o.lead?.created_by || "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{o.visit_date ? format(new Date(o.visit_date), "dd MMM") : "—"}</TableCell>
-                           <TableCell>
+                          <TableCell>
                             <div className="flex gap-1 flex-wrap">
-                              <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openLogVisit(o.lead_id, o.id)}>
-                                <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
-                              </Button>
-                              <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(o.lead_id)}>
-                                <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
-                              </Button>
-                              <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
-                                setDropLeadId(o.lead_id);
-                                setDropOrderId(o.id);
-                                setDropReason("");
-                                setDropRemarks("");
-                                setDropOpen(true);
-                              }}>
-                                <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
-                              </Button>
+                              {o.lead?.created_by === user?.email ? (
+                                <>
+                                  <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openLogVisit(o.lead_id, o.id)}>
+                                    <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
+                                  </Button>
+                                  <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
+                                    setDropLeadId(o.lead_id);
+                                    setDropOrderId(o.id);
+                                    setDropReason("");
+                                    setDropRemarks("");
+                                    setDropOpen(true);
+                                  }}>
+                                    <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(o.lead_id)}>
+                                  <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -773,12 +789,12 @@ export default function SampleOrdersPage() {
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" size="sm" onClick={() => setRevisitSubOpen(true)} disabled={!logVisitLeadId}>
-              <RotateCcw className="w-3 h-3 mr-1" /> Revisit Required
+              <RotateCcw className="w-3 h-3 mr-1" /> Save as Incomplete
             </Button>
             <div className="flex gap-2">
               <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
               <Button size="sm" onClick={handleBookSampleOrder} disabled={!logVisitLeadId || !form.remarks || !form.sku_spec_notes || !visitPhotoUrl}>
-                <Package className="w-3 h-3 mr-1" /> Book Sample Order
+                <Package className="w-3 h-3 mr-1" /> Save and Close
               </Button>
             </div>
           </DialogFooter>
@@ -788,7 +804,7 @@ export default function SampleOrdersPage() {
       {/* Revisit Sub-dialog */}
       <Dialog open={revisitSubOpen} onOpenChange={open => { if (!open) { setRevisitSubOpen(false); } }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle className="text-base">Schedule Re-visit</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="text-base">Save as Incomplete</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="flex justify-center">
               <Calendar mode="single" selected={revisitDate} onSelect={setRevisitDate} initialFocus className="p-3 pointer-events-auto" />
@@ -804,7 +820,7 @@ export default function SampleOrdersPage() {
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" onClick={handleRevisitRequired} disabled={!revisitDate}>Confirm Re-visit</Button>
+            <Button size="sm" onClick={handleRevisitRequired} disabled={!revisitDate}>Save and Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

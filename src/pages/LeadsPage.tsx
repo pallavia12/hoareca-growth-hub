@@ -656,6 +656,7 @@ export default function LeadsPage() {
     const lead = getLeadForProspect(p.id);
     const callCount = lead?.call_count || 0;
     const visitCount = lead?.visit_count || 0;
+    const isAssignedToMe = p.mapped_to === user?.email || userRole === "admin";
 
     return (
       <TableRow key={p.id} className="text-sm">
@@ -685,14 +686,19 @@ export default function LeadsPage() {
         <TableCell>
           {showActions ? (
             <div className="flex gap-1 flex-wrap">
-              <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openCreateLead(p.id)}><CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit</Button>
-              <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassignDialog(p.id)}><RefreshCw className="w-3 h-3 mr-1" /> Re-assign</Button>
-              <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
-                setMarkDropoutProspectId(p.id);
-                setDropoutReason("");
-                setDropoutInfo("");
-                setMarkDropoutOpen(true);
-              }}><XCircle className="w-3 h-3 mr-1" /> Mark Dropout</Button>
+              {isAssignedToMe ? (
+                <>
+                  <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openCreateLead(p.id)}><CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit</Button>
+                  <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
+                    setMarkDropoutProspectId(p.id);
+                    setDropoutReason("");
+                    setDropoutInfo("");
+                    setMarkDropoutOpen(true);
+                  }}><XCircle className="w-3 h-3 mr-1" /> Mark Dropout</Button>
+                </>
+              ) : (
+                <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassignDialog(p.id)}><RefreshCw className="w-3 h-3 mr-1" /> Re-assign</Button>
+              )}
             </div>
           ) : (
             <span className="text-xs text-muted-foreground">—</span>
@@ -888,7 +894,7 @@ export default function LeadsPage() {
       {/* Create Lead Dialog */}
       <Dialog open={createLeadOpen} onOpenChange={open => { if (!open) { setCreateLeadOpen(false); resetForm(); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Log Visit / Create Lead</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Create Lead</DialogTitle></DialogHeader>
           {renderLeadForm()}
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" size="sm" onClick={() => setIncompleteOpen(true)} disabled={!form.client_name || !form.pincode}>
@@ -896,7 +902,7 @@ export default function LeadsPage() {
             </Button>
             <div className="flex gap-2">
               <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-              <Button size="sm" className="bg-success hover:bg-success/90 text-success-foreground" onClick={handleSaveLead} disabled={!form.client_name || !form.pincode}>Log Visit</Button>
+              <Button size="sm" className="bg-success hover:bg-success/90 text-success-foreground" onClick={handleSaveLead} disabled={!form.client_name || !form.pincode}>Save and Close</Button>
             </div>
           </DialogFooter>
         </DialogContent>
@@ -913,7 +919,7 @@ export default function LeadsPage() {
             </Button>
             <div className="flex gap-2">
               <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-              <Button size="sm" className="bg-success hover:bg-success/90 text-success-foreground" onClick={handleSaveLead} disabled={!form.client_name || !form.pincode}>Log Visit</Button>
+              <Button size="sm" className="bg-success hover:bg-success/90 text-success-foreground" onClick={handleSaveLead} disabled={!form.client_name || !form.pincode}>Save and Close</Button>
             </div>
           </DialogFooter>
         </DialogContent>
@@ -922,7 +928,7 @@ export default function LeadsPage() {
       {/* Incomplete - Date/Time Picker */}
       <Dialog open={incompleteOpen} onOpenChange={setIncompleteOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle className="text-base">Schedule Re-visit</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="text-base">Save as Incomplete</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="flex justify-center">
               <Calendar mode="single" selected={revisitDate} onSelect={setRevisitDate} initialFocus className="p-3 pointer-events-auto" />

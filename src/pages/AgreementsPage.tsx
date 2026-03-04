@@ -26,6 +26,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useSampleOrders } from "@/hooks/useSampleOrders";
 import { useLeads } from "@/hooks/useLeads";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Search, CalendarIcon, Send, RotateCcw, XCircle, AlertTriangle, Truck, Clock,
   UserCheck, RefreshCw, CheckCircle2,
@@ -72,6 +73,7 @@ export default function AgreementsPage() {
   const partners = useDistributionPartners();
   const deliverySlots = useDeliverySlots();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   // Fetch drop reasons and SKU options from DB
   const [dropReasons, setDropReasons] = useState<string[]>([]);
@@ -636,7 +638,7 @@ export default function AgreementsPage() {
                     {deliveredItems.length === 0 ? (
                       <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">No delivered orders pending feedback.</TableCell></TableRow>
                     ) : (
-                      deliveredItems.map(item => (
+                       deliveredItems.map(item => (
                         <TableRow key={item.orderId} className="text-sm">
                           <TableCell className="font-medium max-w-[180px] truncate">{item.leadName}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{item.lead?.visit_count || 0}</TableCell>
@@ -646,15 +648,20 @@ export default function AgreementsPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex gap-1 flex-wrap">
-                              <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openSendAgreement(item.orderId, item.agreementId)}>
-                                <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
-                              </Button>
-                              <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(item.lead?.id || "")}>
-                                <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
-                              </Button>
-                              <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => openNotInterested(item.orderId, item.agreementId)}>
-                                <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
-                              </Button>
+                              {item.lead?.created_by === user?.email ? (
+                                <>
+                                  <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openSendAgreement(item.orderId, item.agreementId)}>
+                                    <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
+                                  </Button>
+                                  <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => openNotInterested(item.orderId, item.agreementId)}>
+                                    <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(item.lead?.id || "")}>
+                                  <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -698,17 +705,22 @@ export default function AgreementsPage() {
                             <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
                             <TableCell>
                               <div className="flex gap-1 flex-wrap">
-                                <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openSendAgreement(a.sample_order_id, a.id)}>
-                                  <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
-                                </Button>
-                                {a.lead?.id && (
-                                  <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(a.lead!.id)}>
-                                    <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
-                                  </Button>
+                                {a.lead?.created_by === user?.email ? (
+                                  <>
+                                    <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openSendAgreement(a.sample_order_id, a.id)}>
+                                      <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
+                                    </Button>
+                                    <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => openNotInterested(a.sample_order_id, a.id)}>
+                                      <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
+                                    </Button>
+                                  </>
+                                ) : (
+                                  a.lead?.id && (
+                                    <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(a.lead!.id)}>
+                                      <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
+                                    </Button>
+                                  )
                                 )}
-                                <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => openNotInterested(a.sample_order_id, a.id)}>
-                                  <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
-                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -813,6 +825,37 @@ export default function AgreementsPage() {
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Confirm Delivery</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">Are you sure you want to mark this order as delivered?</p>
+          {deliverOrderId && (() => {
+            const order = orders.find(o => o.id === deliverOrderId);
+            if (!order) return null;
+            const skuSpecMatch = order.remarks?.match(/\[SKU Notes\]\s*([^\n]+)/);
+            const skuSpec = skuSpecMatch ? skuSpecMatch[1].trim() : null;
+            const skuCombos = extractSkuCombos(order.remarks);
+            return (
+              <div className="bg-muted/50 rounded-md p-3 space-y-2 text-xs">
+                {skuCombos.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="font-medium text-foreground">Order Details</p>
+                    <div className="flex flex-col divide-y divide-border">
+                      {skuCombos.map((c, i) => (
+                        <div key={i} className="flex items-center gap-2 py-1 first:pt-0 last:pb-0">
+                          <span className="font-semibold text-foreground">{c.qty} units</span>
+                          <span className="text-muted-foreground">·</span>
+                          <span className="text-muted-foreground">{c.ripeness}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {skuSpec && (
+                  <div>
+                    <p className="font-medium text-foreground">SKU Specifications</p>
+                    <p className="text-muted-foreground mt-0.5">{skuSpec}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {deliverError && (
             <div className="bg-destructive/10 border border-destructive/20 text-destructive text-sm p-3 rounded-md flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -1065,12 +1108,12 @@ export default function AgreementsPage() {
               setSendOpen(false);
               openScheduleRevisit(sendOrderId!, sendAgreementId);
             }}>
-              <RotateCcw className="w-3 h-3 mr-1" /> Schedule Revisit
+              <RotateCcw className="w-3 h-3 mr-1" /> Save as Incomplete
             </Button>
             <div className="flex gap-2">
               <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
               <Button size="sm" className="text-xs" onClick={handleSendAgreement}>
-                <Send className="w-3 h-3 mr-1" /> Save & Send Agreement
+                <Send className="w-3 h-3 mr-1" /> Save and Close
               </Button>
             </div>
           </DialogFooter>
@@ -1080,7 +1123,7 @@ export default function AgreementsPage() {
       {/* Schedule Revisit Dialog */}
       <Dialog open={revisitOpen} onOpenChange={open => { if (!open) setRevisitOpen(false); }}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Schedule Revisit</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Save as Incomplete</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -1109,7 +1152,7 @@ export default function AgreementsPage() {
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" onClick={handleScheduleRevisit} disabled={!revisitDate || !revisitRemarks.trim()}>Save</Button>
+            <Button size="sm" onClick={handleScheduleRevisit} disabled={!revisitDate || !revisitRemarks.trim()}>Save and Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
