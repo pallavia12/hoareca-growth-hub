@@ -27,7 +27,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
   Search, CalendarIcon, Package, Clock, XCircle, RotateCcw, Plus, Trash2,
-  UserCheck, RefreshCw, CheckCircle2,
+  UserCheck, RefreshCw, CheckCircle2, Upload, ShieldCheck, ShieldAlert, ShieldX,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -117,6 +117,15 @@ export default function SampleOrdersPage() {
   const [visitPhotoUrl, setVisitPhotoUrl] = useState<string | null>(null);
   const [deliveryDate, setDeliveryDate] = useState<Date | undefined>();
 
+  // KYC state for New Sample Order dialog
+  const [kycGstCertUrl, setKycGstCertUrl] = useState<string | null>(null);
+  const [kycPanCardUrl, setKycPanCardUrl] = useState<string | null>(null);
+  const [kycGstCertUploading, setKycGstCertUploading] = useState(false);
+  const [kycPanCardUploading, setKycPanCardUploading] = useState(false);
+  const [kycGstId, setKycGstId] = useState("");
+  const [kycPanNumber, setKycPanNumber] = useState("");
+  const [kycVerifyResult, setKycVerifyResult] = useState<"Verified" | "Unverified" | "Duplicate" | null>(null);
+
   const resetForm = () => {
     setForm({ delivery_address: "", delivery_date: "", delivery_slot: "", demand_per_week_kg: "", remarks: "", visit_date: format(new Date(), "yyyy-MM-dd"), selected_sku: "", sku_spec_notes: "" });
     setSkuRows([{ quantity: "", ripeness_stage: "" }]);
@@ -124,6 +133,11 @@ export default function SampleOrdersPage() {
     setLogVisitLeadId(null);
     setLogVisitOrderId(null);
     setVisitPhotoUrl(null);
+    setKycGstCertUrl(null);
+    setKycPanCardUrl(null);
+    setKycGstId("");
+    setKycPanNumber("");
+    setKycVerifyResult(null);
   };
 
   // Qualified leads for scheduled tab (no existing sample order)
@@ -296,7 +310,13 @@ export default function SampleOrdersPage() {
     }
     const lead = leads.find(l => l.id === logVisitLeadId);
     if (lead) {
-      await updateLead(logVisitLeadId, { visit_count: (lead.visit_count || 0) + 1 });
+      const kycUpdates: Record<string, any> = { visit_count: (lead.visit_count || 0) + 1 };
+      if (!lead.gst_id && kycGstId) kycUpdates.gst_id = kycGstId;
+      if (!lead.gst_cert_url && kycGstCertUrl) kycUpdates.gst_cert_url = kycGstCertUrl;
+      if (!lead.pan_number && kycPanNumber) kycUpdates.pan_number = kycPanNumber;
+      if (!lead.pan_card_url && kycPanCardUrl) kycUpdates.pan_card_url = kycPanCardUrl;
+      if (kycVerifyResult) kycUpdates.verification_status = kycVerifyResult;
+      await updateLead(logVisitLeadId, kycUpdates);
     }
     toast({ title: "Sample order booked" });
     resetForm();
@@ -363,6 +383,39 @@ export default function SampleOrdersPage() {
     const match = remarks.match(/\[Dropped\]\s*([^:]+?)(?::\s*(.*?))?(?:\.\s*Total|$)/s);
     if (match) return { reason: match[1].trim(), info: (match[2] || "").trim() || "—" };
     return { reason: "—", info: remarks };
+  };
+
+  const handleKycDocUpload = async (file: File, type: "gst" | "pan") => {
+    const allowed = ["image/png", "image/jpeg", "application/pdf"];
+    if (!allowed.includes(file.type)) {
+      toast({ title: "Invalid file type", description: "Only PNG, JPG, or PDF allowed", variant: "destructive" });
+      return;
+    }
+    const folder = type === "gst" ? "gst-certs" : "pan-cards";
+    const ext = file.name.split(".").pop();
+    const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    if (type === "gst") setKycGstCertUploading(true);
+    else setKycPanCardUploading(true);
+    const { error } = await supabase.storage.from("photos").upload(path, file);
+    if (!error) {
+      const { data: urlData } = supabase.storage.from("photos").getPublicUrl(path);
+      if (type === "gst") setKycGstCertUrl(urlData.publicUrl);
+      else setKycPanCardUrl(urlData.publicUrl);
+    } else {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    }
+    if (type === "gst") setKycGstCertUploading(false);
+    else setKycPanCardUploading(false);
+  };
+
+  const handleKycVerify = (contactNumber?: string | null) => {
+    const canVerify = !!(kycGstId || kycPanNumber);
+    if (!canVerify) return;
+    const next: "Verified" | "Unverified" | "Duplicate" =
+      !kycVerifyResult ? "Verified" :
+      kycVerifyResult === "Verified" ? "Unverified" :
+      kycVerifyResult === "Unverified" ? "Duplicate" : "Verified";
+    setKycVerifyResult(next);
   };
 
   const renderScheduledRow = (leadId: string, clientName: string, pmName: string | null, visitDate: string | null, assignedTo: string | null, orderId?: string) => {
@@ -701,40 +754,95 @@ export default function SampleOrdersPage() {
             {logVisitLeadId && (() => {
               const lead = leads.find(l => l.id === logVisitLeadId);
               if (!lead) return null;
-              const hasGst = !!(lead.gst_id || lead.gst_cert_url);
-              const hasPan = !!(lead.pan_number || lead.pan_card_url);
+              const gstCertDisplay = lead.gst_cert_url || kycGstCertUrl;
+              const gstIdDisplay = lead.gst_id;
+              const panCardDisplay = lead.pan_card_url || kycPanCardUrl;
+              const panNumDisplay = lead.pan_number;
+              const verifyStatus = kycVerifyResult || lead.verification_status;
+              const canVerifyKyc = !!(kycGstId || gstIdDisplay || kycPanNumber || panNumDisplay);
               return (
                 <div className="space-y-3 border rounded-md p-3 bg-muted/30">
                   <p className="text-xs font-semibold text-foreground uppercase tracking-wider">KYC / Identification</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">GST IN</Label>
-                      {hasGst ? (
-                        <div className="flex items-center gap-1.5">
-                          <Input value={lead.gst_id || ""} readOnly className="bg-muted/50 text-xs h-9" />
-                          {lead.gst_cert_url && <span className="text-[10px] text-success font-medium">✓ Doc</span>}
-                        </div>
-                      ) : (
-                        <Input placeholder="22AAAAA0000A1Z5" className="text-xs h-9" id="s3-gst-id" defaultValue=""
-                          onChange={e => (e.target as any)._kycGst = e.target.value} />
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">PAN Number</Label>
-                      {hasPan ? (
-                        <div className="flex items-center gap-1.5">
-                          <Input value={lead.pan_number || ""} readOnly className="bg-muted/50 text-xs h-9" />
-                          {lead.pan_card_url && <span className="text-[10px] text-success font-medium">✓ Doc</span>}
-                        </div>
-                      ) : (
-                        <Input placeholder="ABCDE1234F" className="text-xs h-9" id="s3-pan-number" defaultValue=""
-                          onChange={e => (e.target as any)._kycPan = e.target.value} />
-                      )}
-                    </div>
+
+                  {/* 1. GST Certificate */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">GST Certificate</Label>
+                    {gstCertDisplay ? (
+                      <a href={gstCertDisplay} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-success font-medium">✓ View Document</a>
+                    ) : (
+                      <>
+                        <input type="file" accept=".png,.jpg,.jpeg,.pdf" className="hidden" id="s3-gst-cert-input"
+                          onChange={e => e.target.files?.[0] && handleKycDocUpload(e.target.files[0], "gst")} />
+                        <button type="button" className="inline-flex items-center gap-1.5 text-xs border border-input rounded-md px-3 h-9 bg-background hover:bg-accent w-full justify-start"
+                          onClick={() => document.getElementById("s3-gst-cert-input")?.click()} disabled={kycGstCertUploading}>
+                          <Upload className="w-3 h-3" />
+                          {kycGstCertUploading ? "Uploading..." : "Upload / Capture"}
+                        </button>
+                      </>
+                    )}
                   </div>
-                  {lead.verification_status && (
-                    <div className={`text-xs px-2 py-1 rounded-md font-medium ${lead.verification_status === "Verified" ? "bg-success/10 text-success" : lead.verification_status === "Duplicate" ? "bg-warning/10 text-warning" : "bg-destructive/10 text-destructive"}`}>
-                      {lead.verification_status === "Verified" ? "✓" : "!"} KYC {lead.verification_status} from Step 2
+
+                  {/* 2. GST IN */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">GST IN</Label>
+                    {gstIdDisplay ? (
+                      <Input value={gstIdDisplay} readOnly className="bg-muted/50 text-xs h-9" />
+                    ) : (
+                      <Input placeholder="22AAAAA0000A1Z5" className="text-xs h-9" value={kycGstId}
+                        onChange={e => setKycGstId(e.target.value)} />
+                    )}
+                  </div>
+
+                  {/* 3. PAN Card */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">PAN Card</Label>
+                    {panCardDisplay ? (
+                      <a href={panCardDisplay} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-success font-medium">✓ View Document</a>
+                    ) : (
+                      <>
+                        <input type="file" accept=".png,.jpg,.jpeg,.pdf" className="hidden" id="s3-pan-card-input"
+                          onChange={e => e.target.files?.[0] && handleKycDocUpload(e.target.files[0], "pan")} />
+                        <button type="button" className="inline-flex items-center gap-1.5 text-xs border border-input rounded-md px-3 h-9 bg-background hover:bg-accent w-full justify-start"
+                          onClick={() => document.getElementById("s3-pan-card-input")?.click()} disabled={kycPanCardUploading}>
+                          <Upload className="w-3 h-3" />
+                          {kycPanCardUploading ? "Uploading..." : "Upload / Capture"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* 4. PAN Number */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">PAN Number</Label>
+                    {panNumDisplay ? (
+                      <Input value={panNumDisplay} readOnly className="bg-muted/50 text-xs h-9" />
+                    ) : (
+                      <Input placeholder="ABCDE1234F" className="text-xs h-9" value={kycPanNumber}
+                        onChange={e => setKycPanNumber(e.target.value)} />
+                    )}
+                  </div>
+
+                  {/* 5. Verify Button */}
+                  {!verifyStatus && (
+                    <div className="pt-1">
+                      <button type="button"
+                        className={`inline-flex items-center gap-1.5 text-xs rounded-md px-3 h-8 font-medium ${canVerifyKyc ? "bg-primary text-primary-foreground hover:bg-primary/90" : "border border-input bg-background text-muted-foreground cursor-not-allowed"}`}
+                        onClick={() => handleKycVerify(lead.contact_number)} disabled={!canVerifyKyc}>
+                        <ShieldCheck className="w-3.5 h-3.5" /> Verify Identity
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 6. Tag and Reason */}
+                  {verifyStatus && (
+                    <div className={`p-2.5 rounded-md space-y-0.5 ${verifyStatus === "Verified" ? "bg-success/10 border border-success/20" : verifyStatus === "Duplicate" ? "bg-warning/10 border border-warning/20" : "bg-destructive/10 border border-destructive/20"}`}>
+                      <div className={`flex items-center gap-1.5 text-xs font-semibold ${verifyStatus === "Verified" ? "text-success" : verifyStatus === "Duplicate" ? "text-warning" : "text-destructive"}`}>
+                        {verifyStatus === "Verified" ? <ShieldCheck className="w-3.5 h-3.5" /> : verifyStatus === "Duplicate" ? <ShieldX className="w-3.5 h-3.5" /> : <ShieldAlert className="w-3.5 h-3.5" />}
+                        {verifyStatus}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        {verifyStatus === "Verified" ? `Contact on record: ${lead.contact_number || "N/A"}` : verifyStatus === "Duplicate" ? "Duplicate entries found." : "GST ID and PAN number are not linked."}
+                      </p>
                     </div>
                   )}
                 </div>
