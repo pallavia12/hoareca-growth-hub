@@ -686,9 +686,10 @@ export default function LeadsPage() {
         <TableCell>
           {showActions ? (
             <div className="flex gap-1 flex-wrap">
-              {isAssignedToMe ? (
+      {isAssignedToMe ? (
                 <>
                   <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openCreateLead(p.id)}><CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit</Button>
+                  <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassignDialog(p.id)}><RefreshCw className="w-3 h-3 mr-1" /> Re-assign</Button>
                   <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
                     setMarkDropoutProspectId(p.id);
                     setDropoutReason("");

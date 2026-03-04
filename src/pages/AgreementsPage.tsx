@@ -646,24 +646,27 @@ export default function AgreementsPage() {
                           <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">
                             {item.deliveredDate ? format(new Date(item.deliveredDate), "dd MMM") : "—"}
                           </TableCell>
-                          <TableCell>
-                            <div className="flex gap-1 flex-wrap">
-                              {item.lead?.created_by === user?.email ? (
-                                <>
-                                  <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openSendAgreement(item.orderId, item.agreementId)}>
-                                    <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
-                                  </Button>
-                                  <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => openNotInterested(item.orderId, item.agreementId)}>
-                                    <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
-                                  </Button>
-                                </>
-                              ) : (
-                                <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(item.lead?.id || "")}>
-                                  <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
+                           <TableCell>
+                             <div className="flex gap-1 flex-wrap">
+                               {item.lead?.created_by === user?.email ? (
+                                 <>
+                                   <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openSendAgreement(item.orderId, item.agreementId)}>
+                                     <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
+                                   </Button>
+                                   <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(item.lead?.id || "")}>
+                                     <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
+                                   </Button>
+                                   <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => openNotInterested(item.orderId, item.agreementId)}>
+                                     <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
+                                   </Button>
+                                 </>
+                               ) : (
+                                 <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(item.lead?.id || "")}>
+                                   <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
+                                 </Button>
+                               )}
+                             </div>
+                           </TableCell>
                         </TableRow>
                       ))
                     )}
@@ -704,11 +707,14 @@ export default function AgreementsPage() {
                             <TableCell className="text-xs">{nextVisit || "—"}</TableCell>
                             <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{extractFeedback(a)}</TableCell>
                             <TableCell>
-                              <div className="flex gap-1 flex-wrap">
+                               <div className="flex gap-1 flex-wrap">
                                 {a.lead?.created_by === user?.email ? (
                                   <>
                                     <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openSendAgreement(a.sample_order_id, a.id)}>
                                       <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
+                                    </Button>
+                                    <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(a.lead?.id || "")}>
+                                      <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
                                     </Button>
                                     <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => openNotInterested(a.sample_order_id, a.id)}>
                                       <XCircle className="w-3 h-3 mr-1" /> Mark Dropout
@@ -721,7 +727,7 @@ export default function AgreementsPage() {
                                     </Button>
                                   )
                                 )}
-                              </div>
+                               </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -930,6 +936,56 @@ export default function AgreementsPage() {
                         </span>
                       )}
                     </>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* KYC Section */}
+            {sendOrderId && (() => {
+              const lead = getLeadForOrder(sendOrderId);
+              if (!lead) return null;
+              return (
+                <div className="space-y-3 border rounded-md p-3 bg-muted/30">
+                  <p className="text-xs font-semibold text-foreground uppercase tracking-wider">KYC / Identification</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">GST IN</Label>
+                      {lead.gst_id ? (
+                        <Input value={lead.gst_id} readOnly className="bg-muted/50 text-xs h-8" />
+                      ) : (
+                        <Input placeholder="22AAAAA0000A1Z5" className="text-xs h-8" />
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">GST Certificate</Label>
+                      {lead.gst_cert_url ? (
+                        <a href={lead.gst_cert_url} target="_blank" rel="noreferrer" className="text-xs text-primary underline">✓ View Document</a>
+                      ) : (
+                        <p className="text-xs text-muted-foreground italic">Not uploaded</p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">PAN Number</Label>
+                      {lead.pan_number ? (
+                        <Input value={lead.pan_number} readOnly className="bg-muted/50 text-xs h-8" />
+                      ) : (
+                        <Input placeholder="ABCDE1234F" className="text-xs h-8" />
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">PAN Card</Label>
+                      {lead.pan_card_url ? (
+                        <a href={lead.pan_card_url} target="_blank" rel="noreferrer" className="text-xs text-primary underline">✓ View Document</a>
+                      ) : (
+                        <p className="text-xs text-muted-foreground italic">Not uploaded</p>
+                      )}
+                    </div>
+                  </div>
+                  {lead.verification_status && (
+                    <div className={`text-xs px-2 py-1 rounded-md font-medium ${lead.verification_status === "Verified" ? "bg-success/10 text-success" : lead.verification_status === "Duplicate" ? "bg-warning/10 text-warning" : "bg-destructive/10 text-destructive"}`}>
+                      {lead.verification_status === "Verified" ? "✓" : "!"} KYC {lead.verification_status}
+                    </div>
                   )}
                 </div>
               );

@@ -366,8 +366,6 @@ export default function SampleOrdersPage() {
   };
 
   const renderScheduledRow = (leadId: string, clientName: string, pmName: string | null, visitDate: string | null, assignedTo: string | null, orderId?: string) => {
-    const isAssignedToMe = assignedTo === user?.email || (user as any)?.role === "admin";
-    // Check admin via leads data
     const lead = leads.find(l => l.id === leadId);
     const assignedToMe = lead ? (lead.created_by === user?.email) : (assignedTo === user?.email);
     return (
@@ -382,6 +380,9 @@ export default function SampleOrdersPage() {
               <>
                 <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openLogVisit(leadId, orderId)}>
                   <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
+                </Button>
+                <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(leadId)}>
+                  <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
                 </Button>
                 <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
                   setDropLeadId(leadId);
@@ -593,6 +594,9 @@ export default function SampleOrdersPage() {
                                   <Button size="sm" className="text-xs h-7 bg-success hover:bg-success/90 text-success-foreground" onClick={() => openLogVisit(o.lead_id, o.id)}>
                                     <CheckCircle2 className="w-3 h-3 mr-1" /> Log Visit
                                   </Button>
+                                  <Button size="sm" className="text-xs h-7 bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => openReassign(o.lead_id)}>
+                                    <RefreshCw className="w-3 h-3 mr-1" /> Re-assign
+                                  </Button>
                                   <Button size="sm" className="text-xs h-7 bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={() => {
                                     setDropLeadId(o.lead_id);
                                     setDropOrderId(o.id);
@@ -664,7 +668,7 @@ export default function SampleOrdersPage() {
       {/* Log Visit Dialog */}
       <Dialog open={logVisitOpen} onOpenChange={open => { if (!open) { setLogVisitOpen(false); resetForm(); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Log Visit — New Sample Order</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>New Sample Order</DialogTitle></DialogHeader>
           <div className="grid gap-3 py-2">
             {/* Auto-filled client info */}
             {logVisitLeadId && (() => {
@@ -693,7 +697,51 @@ export default function SampleOrdersPage() {
               <Input type="number" placeholder="e.g. 10" value={form.demand_per_week_kg} onChange={e => setForm(f => ({ ...f, demand_per_week_kg: e.target.value }))} />
             </div>
 
-            <p className="text-xs font-medium text-foreground mt-1">SKU Specifications</p>
+            {/* KYC Section */}
+            {logVisitLeadId && (() => {
+              const lead = leads.find(l => l.id === logVisitLeadId);
+              if (!lead) return null;
+              const hasGst = !!(lead.gst_id || lead.gst_cert_url);
+              const hasPan = !!(lead.pan_number || lead.pan_card_url);
+              return (
+                <div className="space-y-3 border rounded-md p-3 bg-muted/30">
+                  <p className="text-xs font-semibold text-foreground uppercase tracking-wider">KYC / Identification</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">GST IN</Label>
+                      {hasGst ? (
+                        <div className="flex items-center gap-1.5">
+                          <Input value={lead.gst_id || ""} readOnly className="bg-muted/50 text-xs h-9" />
+                          {lead.gst_cert_url && <span className="text-[10px] text-success font-medium">✓ Doc</span>}
+                        </div>
+                      ) : (
+                        <Input placeholder="22AAAAA0000A1Z5" className="text-xs h-9" id="s3-gst-id" defaultValue=""
+                          onChange={e => (e.target as any)._kycGst = e.target.value} />
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">PAN Number</Label>
+                      {hasPan ? (
+                        <div className="flex items-center gap-1.5">
+                          <Input value={lead.pan_number || ""} readOnly className="bg-muted/50 text-xs h-9" />
+                          {lead.pan_card_url && <span className="text-[10px] text-success font-medium">✓ Doc</span>}
+                        </div>
+                      ) : (
+                        <Input placeholder="ABCDE1234F" className="text-xs h-9" id="s3-pan-number" defaultValue=""
+                          onChange={e => (e.target as any)._kycPan = e.target.value} />
+                      )}
+                    </div>
+                  </div>
+                  {lead.verification_status && (
+                    <div className={`text-xs px-2 py-1 rounded-md font-medium ${lead.verification_status === "Verified" ? "bg-success/10 text-success" : lead.verification_status === "Duplicate" ? "bg-warning/10 text-warning" : "bg-destructive/10 text-destructive"}`}>
+                      {lead.verification_status === "Verified" ? "✓" : "!"} KYC {lead.verification_status} from Step 2
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            <p className="text-xs font-semibold text-foreground uppercase tracking-wider border-b pb-1 mt-1">SKU Specifications</p>
 
             {/* SKU Dropdown */}
             <div className="space-y-1">
@@ -737,9 +785,9 @@ export default function SampleOrdersPage() {
               </div>
             ))}
 
-            {/* SKU Specification notes - mandatory */}
+            {/* SKU Specification Notes - mandatory */}
             <div className="space-y-1">
-              <Label className="text-xs">SKU Specification *</Label>
+              <Label className="text-xs">SKU Specification Notes *</Label>
               <Textarea placeholder="Enter SKU specification details..." value={form.sku_spec_notes} onChange={e => setForm(f => ({ ...f, sku_spec_notes: e.target.value }))} rows={2} />
             </div>
 
