@@ -11,6 +11,7 @@ import {
   Leaf,
   BookOpen,
   TrendingUp,
+  Store,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -92,6 +93,7 @@ export function AppSidebar() {
     { title: "Step 2: Lead Gen", url: "/leads", icon: Phone, badge: counts.leads },
     { title: "Step 3: Sample Orders", url: "/sample-orders", icon: ShoppingBag, badge: counts.orders },
     { title: "Step 4: Agreements", url: "/agreements", icon: FileSignature, badge: counts.agreements },
+    { title: "Step 5: Customers", url: "/customers", icon: Store },
     { title: "Lead Master", url: "/lead-master", icon: BookOpen },
     { title: "Funnel View", url: "/admin/funnel", icon: TrendingUp },
   ];
