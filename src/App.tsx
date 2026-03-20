@@ -12,6 +12,7 @@ import ProspectsPage from "./pages/ProspectsPage";
 import LeadsPage from "./pages/LeadsPage";
 import SampleOrdersPage from "./pages/SampleOrdersPage";
 import AgreementsPage from "./pages/AgreementsPage";
+import CustomersPage from "./pages/CustomersPage";
 import LeadMasterPage from "./pages/LeadMasterPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import FunnelViewPage from "./pages/FunnelViewPage";
