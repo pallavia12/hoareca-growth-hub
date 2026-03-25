@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Search, Phone, MapPin, ClipboardList, ChevronDown, ChevronUp,
-  ArrowDown, Users, UserCheck,
+  ArrowDown, Users, UserCheck, CalendarDays, CheckCircle2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -99,6 +99,36 @@ function makeHistory(orderedDays: number[], kgPerDay: number): DayOrder[] {
     return { date: isoDate(d), kg: orderedDays.includes(i) ? kgPerDay : null };
   });
 }
+
+// Onboard Pending - no orders yet, just signed agreements
+const SAMPLE_ONBOARD_PENDING: Customer[] = [
+  {
+    entityId: "E010",
+    customerId: null,
+    customerName: "The Green Table",
+    bpName: "XYZ Corp", bpId: "2201",
+    dpName: "Dunzo", dpId: "33",
+    lastOrderDate: null, lastOrderKg: null,
+    kam: "amit@ninjacart.com",
+    locality: "Jayanagar", localityId: "JAY05",
+    address: "4th Block, Jayanagar, Bangalore - 560041",
+    pmContact: "+91 98001 23456",
+    orderHistory: [],
+  },
+  {
+    entityId: "E011",
+    customerId: null,
+    customerName: "Olive Café",
+    bpName: "PQR Foods", bpId: "3305",
+    dpName: "Swiggy Genie", dpId: "55",
+    lastOrderDate: null, lastOrderKg: null,
+    kam: "priya@ninjacart.com",
+    locality: "Malleshwaram", localityId: "MAL06",
+    address: "11th Cross, Malleshwaram, Bangalore - 560003",
+    pmContact: "+91 96543 21098",
+    orderHistory: [],
+  },
+];
 
 const SAMPLE_NOT_ORDERED: Customer[] = [
   {
@@ -207,21 +237,17 @@ function CalendarGrid({ history, today }: { history: DayOrder[]; today: Date }) 
 
   return (
     <div className="space-y-1">
-      {/* Week 1 (older) */}
       <div className="grid grid-cols-7 gap-1">
         {week1.map((item, i) => renderBox(item, i))}
       </div>
-      {/* Day labels between rows */}
       <div className="grid grid-cols-7 gap-1 py-0.5">
         {DAY_LABELS.map(d => (
           <div key={d} className="text-center text-[10px] font-semibold text-muted-foreground">{d}</div>
         ))}
       </div>
-      {/* Week 2 (recent) */}
       <div className="grid grid-cols-7 gap-1 pb-4">
         {week2.map((item, i) => renderBox(item, i + 7))}
       </div>
-      {/* Legend */}
       <div className="flex items-center gap-3 pt-1 flex-wrap">
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded bg-[#005c00]" />
@@ -241,6 +267,142 @@ function CalendarGrid({ history, today }: { history: DayOrder[]; today: Date }) 
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── Schedule Visit Dialog ────────────────────────────────────────────────────
+
+function ScheduleVisitDialog({
+  customer,
+  open,
+  onClose,
+}: {
+  customer: Customer | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [appointmentDate, setAppointmentDate] = useState("");
+  const [appointmentTime, setAppointmentTime] = useState("");
+  const [assignTo, setAssignTo] = useState(customer?.kam ?? "");
+  const [remarks, setRemarks] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // sync assignTo when customer changes
+  const effectiveAssignTo = assignTo || customer?.kam || "";
+
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (!appointmentDate) e.appointmentDate = "Date of appointment is required.";
+    if (!remarks.trim()) e.remarks = "Remarks are required.";
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSave = () => {
+    if (!validate()) return;
+    toast({
+      title: "Visit scheduled",
+      description: `Visit for ${customer?.customerName} scheduled on ${appointmentDate}.`,
+    });
+    handleClose();
+  };
+
+  const handleClose = () => {
+    setAppointmentDate("");
+    setAppointmentTime("");
+    setAssignTo("");
+    setRemarks("");
+    setErrors({});
+    onClose();
+  };
+
+  if (!customer) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && handleClose()}>
+      <DialogContent className="w-full max-w-md sm:max-w-md h-[100dvh] sm:h-auto sm:max-h-[88vh] flex flex-col rounded-none sm:rounded-lg p-0">
+        <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <CalendarDays className="w-4 h-4 text-primary" />
+            Schedule Visit
+          </DialogTitle>
+          <p className="text-xs text-muted-foreground mt-0.5">{customer.customerName}</p>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+
+          {/* Date of Appointment */}
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">
+              Date of Appointment <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              type="date"
+              value={appointmentDate}
+              onChange={e => setAppointmentDate(e.target.value)}
+              min={isoDate(new Date())}
+              className={errors.appointmentDate ? "border-destructive" : ""}
+            />
+            {errors.appointmentDate && (
+              <p className="text-xs text-destructive">{errors.appointmentDate}</p>
+            )}
+          </div>
+
+          {/* Time of Appointment */}
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">
+              Time of Appointment <span className="text-muted-foreground text-xs font-normal">(optional)</span>
+            </Label>
+            <Input
+              type="time"
+              value={appointmentTime}
+              onChange={e => setAppointmentTime(e.target.value)}
+            />
+          </div>
+
+          {/* Assign To */}
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">Assign To</Label>
+            <Input
+              value={effectiveAssignTo}
+              onChange={e => setAssignTo(e.target.value)}
+              placeholder="KAM user email..."
+            />
+            <p className="text-xs text-muted-foreground">Defaults to KAM: {customer.kam}</p>
+          </div>
+
+          {/* Remarks */}
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">
+              Remarks <span className="text-destructive">*</span>
+            </Label>
+            <Textarea
+              placeholder="Enter remarks for this visit..."
+              value={remarks}
+              onChange={e => setRemarks(e.target.value)}
+              className={`min-h-[90px] ${errors.remarks ? "border-destructive" : ""}`}
+            />
+            {errors.remarks && (
+              <p className="text-xs text-destructive">{errors.remarks}</p>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter className="px-5 py-3 border-t shrink-0 flex-row gap-2">
+          <Button variant="outline" onClick={handleClose} className="flex-1 sm:flex-none">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSave}
+            className="bg-[#005c00] hover:bg-[#004800] text-white flex-1 sm:flex-none"
+          >
+            <CalendarDays className="w-4 h-4 mr-1.5" />
+            Save and Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -429,7 +591,6 @@ function LogVisitDialog({
           <section className="space-y-4">
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Visit Details</h3>
 
-            {/* Reason for Visit — single column vertical */}
             <div className="space-y-2">
               <Label className="text-sm font-medium">
                 Reason for Visit <span className="text-destructive">*</span>
@@ -451,7 +612,6 @@ function LogVisitDialog({
               {errors.reasons && <p className="text-xs text-destructive">{errors.reasons}</p>}
             </div>
 
-            {/* Order Status */}
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">
                 Order Status <span className="text-destructive">*</span>
@@ -469,7 +629,6 @@ function LogVisitDialog({
               {errors.orderStatus && <p className="text-xs text-destructive">{errors.orderStatus}</p>}
             </div>
 
-            {/* Remarks */}
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">
                 Remarks <span className="text-destructive">*</span>
@@ -505,11 +664,53 @@ function LogVisitDialog({
 function CustomerTableDesktop({
   customers,
   onLogVisit,
+  onScheduleVisit,
+  showOnboardPending = false,
 }: {
   customers: Customer[];
   onLogVisit: (c: Customer) => void;
+  onScheduleVisit: (c: Customer) => void;
+  showOnboardPending?: boolean;
 }) {
   if (customers.length === 0) {
+    if (showOnboardPending) {
+      return (
+        <>
+          {/* Keep headers visible even when empty */}
+          <div className="rounded-md border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/60 border-b">
+                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Entity ID</th>
+                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Customer ID</th>
+                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Customer Name</th>
+                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">BP Name (ID)</th>
+                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">DP Name (ID)</th>
+                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Order</th>
+                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Kg</th>
+                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Assigned To</th>
+                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colSpan={9} className="px-3 py-16 text-center">
+                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                        <CheckCircle2 className="w-10 h-10 text-[#005c00] opacity-70" />
+                        <p className="font-semibold text-base text-foreground">✓ All Leads onboarded!</p>
+                        <p className="text-sm">No pending onboarding at the moment.</p>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      );
+    }
+
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
         <Users className="w-10 h-10 mb-3 opacity-30" />
@@ -559,14 +760,25 @@ function CustomerTableDesktop({
                   </div>
                 </td>
                 <td className="px-3 py-2.5">
-                  <Button
-                    size="sm"
-                    className="bg-[#005c00] hover:bg-[#004800] text-white whitespace-nowrap text-xs h-7 px-2.5"
-                    onClick={() => onLogVisit(c)}
-                  >
-                    <ClipboardList className="w-3 h-3 mr-1" />
-                    Log Visit
-                  </Button>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      className="bg-[#005c00] hover:bg-[#004800] text-white whitespace-nowrap text-xs h-7 px-2.5"
+                      onClick={() => onLogVisit(c)}
+                    >
+                      <ClipboardList className="w-3 h-3 mr-1" />
+                      Log Visit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="whitespace-nowrap text-xs h-7 px-2.5 border-primary text-primary hover:bg-primary/10"
+                      onClick={() => onScheduleVisit(c)}
+                    >
+                      <CalendarDays className="w-3 h-3 mr-1" />
+                      Schedule Visit
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -582,11 +794,32 @@ function CustomerTableDesktop({
 function CustomerCardsMobile({
   customers,
   onLogVisit,
+  onScheduleVisit,
+  showOnboardPending = false,
 }: {
   customers: Customer[];
   onLogVisit: (c: Customer) => void;
+  onScheduleVisit: (c: Customer) => void;
+  showOnboardPending?: boolean;
 }) {
   if (customers.length === 0) {
+    if (showOnboardPending) {
+      return (
+        <div className="space-y-3">
+          {/* Card header row always visible */}
+          <div className="rounded-md border bg-muted/30 px-4 py-2 flex gap-2 text-xs font-semibold text-muted-foreground">
+            <span className="flex-1">Customer</span>
+            <span>BP / DP</span>
+          </div>
+          <div className="flex flex-col items-center justify-center py-14 text-center">
+            <CheckCircle2 className="w-10 h-10 text-[#005c00] opacity-70 mb-2" />
+            <p className="font-semibold text-base text-foreground">✓ All Leads onboarded!</p>
+            <p className="text-sm text-muted-foreground">No pending onboarding at the moment.</p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
         <Users className="w-10 h-10 mb-3 opacity-30" />
@@ -638,8 +871,8 @@ function CustomerCardsMobile({
               </div>
             </div>
 
-            {/* Card footer */}
-            <div className="px-4 pb-3">
+            {/* Card footer - two action buttons */}
+            <div className="px-4 pb-3 grid grid-cols-2 gap-2">
               <Button
                 size="sm"
                 className="w-full bg-[#005c00] hover:bg-[#004800] text-white text-xs"
@@ -647,6 +880,15 @@ function CustomerCardsMobile({
               >
                 <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
                 Log Visit
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full border-primary text-primary hover:bg-primary/10 text-xs"
+                onClick={() => onScheduleVisit(c)}
+              >
+                <CalendarDays className="w-3.5 h-3.5 mr-1.5" />
+                Schedule Visit
               </Button>
             </div>
           </CardContent>
@@ -662,10 +904,16 @@ export default function CustomersPage() {
   const [search, setSearch] = useState("");
   const [agentFilter, setAgentFilter] = useState("all");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [logVisitOpen, setLogVisitOpen] = useState(false);
+  const [scheduleVisitOpen, setScheduleVisitOpen] = useState(false);
   const isMobile = useIsMobile();
 
-  const allCustomers = useMemo(() => [...SAMPLE_NOT_ORDERED, ...SAMPLE_ACTIVE], []);
+  const allCustomers = useMemo(() => [
+    ...SAMPLE_ONBOARD_PENDING,
+    ...SAMPLE_NOT_ORDERED,
+    ...SAMPLE_ACTIVE,
+  ], []);
+
   const agents = useMemo(() => {
     const set = new Set(allCustomers.map(c => c.kam));
     return Array.from(set).sort();
@@ -685,9 +933,15 @@ export default function CustomersPage() {
 
   const handleLogVisit = (c: Customer) => {
     setSelectedCustomer(c);
-    setDialogOpen(true);
+    setLogVisitOpen(true);
   };
 
+  const handleScheduleVisit = (c: Customer) => {
+    setSelectedCustomer(c);
+    setScheduleVisitOpen(true);
+  };
+
+  const onboardFiltered = filter(SAMPLE_ONBOARD_PENDING);
   const notOrderedFiltered = filter(SAMPLE_NOT_ORDERED);
   const activeFiltered = filter(SAMPLE_ACTIVE);
 
@@ -730,9 +984,15 @@ export default function CustomersPage() {
         </Select>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs — default is "not_ordered" (Current Week Not Ordered) */}
       <Tabs defaultValue="not_ordered">
         <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="onboard_pending" className="flex-1 sm:flex-none">
+            Onboard Pending
+            {onboardFiltered.length > 0 && (
+              <Badge variant="secondary" className="ml-1.5 text-xs">{onboardFiltered.length}</Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="not_ordered" className="flex-1 sm:flex-none">
             Current Week Not Ordered
             <Badge variant="secondary" className="ml-1.5 text-xs">{notOrderedFiltered.length}</Badge>
@@ -743,18 +1003,39 @@ export default function CustomersPage() {
           </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="onboard_pending" className="mt-4">
+          <CustomerView
+            customers={onboardFiltered}
+            onLogVisit={handleLogVisit}
+            onScheduleVisit={handleScheduleVisit}
+            showOnboardPending={true}
+          />
+        </TabsContent>
         <TabsContent value="not_ordered" className="mt-4">
-          <CustomerView customers={notOrderedFiltered} onLogVisit={handleLogVisit} />
+          <CustomerView
+            customers={notOrderedFiltered}
+            onLogVisit={handleLogVisit}
+            onScheduleVisit={handleScheduleVisit}
+          />
         </TabsContent>
         <TabsContent value="active" className="mt-4">
-          <CustomerView customers={activeFiltered} onLogVisit={handleLogVisit} />
+          <CustomerView
+            customers={activeFiltered}
+            onLogVisit={handleLogVisit}
+            onScheduleVisit={handleScheduleVisit}
+          />
         </TabsContent>
       </Tabs>
 
       <LogVisitDialog
         customer={selectedCustomer}
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
+        open={logVisitOpen}
+        onClose={() => setLogVisitOpen(false)}
+      />
+      <ScheduleVisitDialog
+        customer={selectedCustomer}
+        open={scheduleVisitOpen}
+        onClose={() => setScheduleVisitOpen(false)}
       />
     </div>
   );
