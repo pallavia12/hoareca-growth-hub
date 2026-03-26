@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useAuth } from "@/contexts/AuthContext";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -30,8 +31,12 @@ interface Customer {
   bpId: string;
   dpName: string;
   dpId: string;
-  lastOrderDate: string | null;
-  lastOrderKg: number | null;
+  agreementDate: string | null;
+  agreedPrice: number | null;
+  weeklyDemandKg: number | null;
+  expectedFirstOrderDate: string | null;
+  lastDeliveryDate: string | null;
+  lastDeliveryKg: number | null;
   kam: string;
   locality: string;
   localityId: string;
@@ -100,7 +105,18 @@ function makeHistory(orderedDays: number[], kgPerDay: number): DayOrder[] {
   });
 }
 
-// Onboard Pending - no orders yet, just signed agreements
+// Simulate the current logged-in user's email for demo
+const CURRENT_USER_EMAIL = "amit@ninjacart.com";
+
+// KAM options for dropdown
+const KAM_OPTIONS = [
+  "amit@ninjacart.com",
+  "priya@ninjacart.com",
+  "ravi@ninjacart.com",
+  "sneha@ninjacart.com",
+];
+
+// Onboard Pending — signed agreements, not yet customers
 const SAMPLE_ONBOARD_PENDING: Customer[] = [
   {
     entityId: "E010",
@@ -108,7 +124,11 @@ const SAMPLE_ONBOARD_PENDING: Customer[] = [
     customerName: "The Green Table",
     bpName: "XYZ Corp", bpId: "2201",
     dpName: "Dunzo", dpId: "33",
-    lastOrderDate: null, lastOrderKg: null,
+    agreementDate: "2025-03-12",
+    agreedPrice: 180,
+    weeklyDemandKg: 30,
+    expectedFirstOrderDate: "2025-03-22",
+    lastDeliveryDate: null, lastDeliveryKg: null,
     kam: "amit@ninjacart.com",
     locality: "Jayanagar", localityId: "JAY05",
     address: "4th Block, Jayanagar, Bangalore - 560041",
@@ -121,7 +141,11 @@ const SAMPLE_ONBOARD_PENDING: Customer[] = [
     customerName: "Olive Café",
     bpName: "PQR Foods", bpId: "3305",
     dpName: "Swiggy Genie", dpId: "55",
-    lastOrderDate: null, lastOrderKg: null,
+    agreementDate: "2025-03-14",
+    agreedPrice: 165,
+    weeklyDemandKg: 20,
+    expectedFirstOrderDate: "2025-03-25",
+    lastDeliveryDate: null, lastDeliveryKg: null,
     kam: "priya@ninjacart.com",
     locality: "Malleshwaram", localityId: "MAL06",
     address: "11th Cross, Malleshwaram, Bangalore - 560003",
@@ -137,7 +161,11 @@ const SAMPLE_NOT_ORDERED: Customer[] = [
     customerName: "Urban Bistro",
     bpName: "ABC Company", bpId: "1076",
     dpName: "Scootsy", dpId: "71",
-    lastOrderDate: "2025-03-10", lastOrderKg: 15,
+    agreementDate: "2025-02-15",
+    agreedPrice: 175,
+    weeklyDemandKg: 60,
+    expectedFirstOrderDate: "2025-02-20",
+    lastDeliveryDate: "2025-03-10", lastDeliveryKg: 15,
     kam: "amit@ninjacart.com",
     locality: "Indiranagar", localityId: "IND01",
     address: "12, 100 Feet Road, Indiranagar, Bangalore - 560038",
@@ -150,7 +178,11 @@ const SAMPLE_NOT_ORDERED: Customer[] = [
     customerName: "The Spice Garden",
     bpName: "GHI Traders", bpId: "2034",
     dpName: "Dunzo", dpId: "88",
-    lastOrderDate: "2025-03-08", lastOrderKg: 10,
+    agreementDate: "2025-02-10",
+    agreedPrice: 160,
+    weeklyDemandKg: 40,
+    expectedFirstOrderDate: "2025-02-15",
+    lastDeliveryDate: "2025-03-08", lastDeliveryKg: 10,
     kam: "ravi@ninjacart.com",
     locality: "Koramangala", localityId: "KOR02",
     address: "5th Block, Koramangala, Bangalore - 560034",
@@ -166,7 +198,11 @@ const SAMPLE_ACTIVE: Customer[] = [
     customerName: "Brew House",
     bpName: "DEF Company", bpId: "1076",
     dpName: "PsyFoods", dpId: "45",
-    lastOrderDate: "2025-03-18", lastOrderKg: 20,
+    agreementDate: "2025-01-20",
+    agreedPrice: 170,
+    weeklyDemandKg: 80,
+    expectedFirstOrderDate: "2025-01-25",
+    lastDeliveryDate: "2025-03-18", lastDeliveryKg: 20,
     kam: "priya@ninjacart.com",
     locality: "HSR Layout", localityId: "HSR03",
     address: "Sector 1, HSR Layout, Bangalore - 560102",
@@ -179,7 +215,11 @@ const SAMPLE_ACTIVE: Customer[] = [
     customerName: "Café Mosaic",
     bpName: "JKL Foods", bpId: "3012",
     dpName: "WeFast", dpId: "62",
-    lastOrderDate: "2025-03-19", lastOrderKg: 8,
+    agreementDate: "2025-01-10",
+    agreedPrice: 155,
+    weeklyDemandKg: 32,
+    expectedFirstOrderDate: "2025-01-15",
+    lastDeliveryDate: "2025-03-19", lastDeliveryKg: 8,
     kam: "amit@ninjacart.com",
     locality: "Whitefield", localityId: "WHT04",
     address: "ITPL Main Road, Whitefield, Bangalore - 560066",
@@ -276,20 +316,24 @@ function ScheduleVisitDialog({
   customer,
   open,
   onClose,
+  currentUserEmail,
 }: {
   customer: Customer | null;
   open: boolean;
   onClose: () => void;
+  currentUserEmail: string;
 }) {
   const { toast } = useToast();
   const [appointmentDate, setAppointmentDate] = useState("");
   const [appointmentTime, setAppointmentTime] = useState("");
-  const [assignTo, setAssignTo] = useState(customer?.kam ?? "");
+  const [assignTo, setAssignTo] = useState("");
   const [remarks, setRemarks] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // sync assignTo when customer changes
-  const effectiveAssignTo = assignTo || customer?.kam || "";
+  // Is the customer assigned to the current logged-in user?
+  const isSelfAssigned = customer?.kam === currentUserEmail;
+  // Effective assign-to: locked to kam if self-assigned, otherwise user's selection
+  const effectiveAssignTo = isSelfAssigned ? (customer?.kam ?? "") : (assignTo || customer?.kam || "");
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -361,15 +405,30 @@ function ScheduleVisitDialog({
             />
           </div>
 
-          {/* Assign To */}
+          {/* Assign To — disabled if self-assigned, dropdown otherwise */}
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Assign To</Label>
-            <Input
-              value={effectiveAssignTo}
-              onChange={e => setAssignTo(e.target.value)}
-              placeholder="KAM user email..."
-            />
-            <p className="text-xs text-muted-foreground">Defaults to KAM: {customer.kam}</p>
+            {isSelfAssigned ? (
+              <Input
+                value={effectiveAssignTo}
+                disabled
+                className="bg-muted/60 text-muted-foreground cursor-not-allowed"
+              />
+            ) : (
+              <Select value={effectiveAssignTo} onValueChange={setAssignTo}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select agent..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {KAM_OPTIONS.map(k => (
+                    <SelectItem key={k} value={k}>{k}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {isSelfAssigned && (
+              <p className="text-xs text-muted-foreground">Assigned to you — cannot be changed here</p>
+            )}
           </div>
 
           {/* Remarks */}
@@ -431,7 +490,7 @@ function LogVisitDialog({
   const [showOrders, setShowOrders] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const hasOrders = !!customer?.lastOrderDate;
+  const hasOrders = !!customer?.lastDeliveryDate;
 
   const toggleReason = (id: string) => {
     setSelectedReasons(prev =>
@@ -527,15 +586,15 @@ function LogVisitDialog({
 
           {/* Section 2 – Order History */}
           <section className="space-y-3">
-            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Order History</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Delivery History</h3>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="text-xs text-muted-foreground mb-0.5">Last Order Date</p>
-                <p className="font-medium">{customer.lastOrderDate ? formatDate(customer.lastOrderDate) : "—"}</p>
+                <p className="text-xs text-muted-foreground mb-0.5">Last Delivered Date</p>
+                <p className="font-medium">{customer.lastDeliveryDate ? formatDate(customer.lastDeliveryDate) : "—"}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground mb-0.5">Last Order Kg</p>
-                <p className="font-medium">{customer.lastOrderKg !== null ? `${customer.lastOrderKg} kg` : "—"}</p>
+                <p className="text-xs text-muted-foreground mb-0.5">Last Delivered Kg</p>
+                <p className="font-medium">{customer.lastDeliveryKg !== null ? `${customer.lastDeliveryKg} kg` : "—"}</p>
               </div>
             </div>
             <div className="bg-muted/30 rounded-md p-3">
@@ -659,58 +718,156 @@ function LogVisitDialog({
   );
 }
 
-// ─── Desktop Table View ───────────────────────────────────────────────────────
+// ─── Action Buttons ───────────────────────────────────────────────────────────
+
+function ActionButtons({
+  customer,
+  currentUserEmail,
+  onLogVisit,
+  onScheduleVisit,
+}: {
+  customer: Customer;
+  currentUserEmail: string;
+  onLogVisit: (c: Customer) => void;
+  onScheduleVisit: (c: Customer) => void;
+}) {
+  const isSelfAssigned = customer.kam === currentUserEmail;
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {isSelfAssigned && (
+        <Button
+          size="sm"
+          className="bg-[#005c00] hover:bg-[#004800] text-white whitespace-nowrap text-xs h-7 px-2.5"
+          onClick={() => onLogVisit(customer)}
+        >
+          <ClipboardList className="w-3 h-3 mr-1" />
+          Log Visit
+        </Button>
+      )}
+      <Button
+        size="sm"
+        variant="outline"
+        className="whitespace-nowrap text-xs h-7 px-2.5 border-primary text-primary hover:bg-primary/10"
+        onClick={() => onScheduleVisit(customer)}
+      >
+        <CalendarDays className="w-3 h-3 mr-1" />
+        Schedule Visit
+      </Button>
+    </div>
+  );
+}
+
+// ─── Desktop Table: Onboard Pending ──────────────────────────────────────────
+
+function OnboardPendingTable({
+  customers,
+  currentUserEmail,
+  onLogVisit,
+  onScheduleVisit,
+}: {
+  customers: Customer[];
+  currentUserEmail: string;
+  onLogVisit: (c: Customer) => void;
+  onScheduleVisit: (c: Customer) => void;
+}) {
+  const headers = (
+    <tr className="bg-muted/60 border-b">
+      <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Entity ID</th>
+      <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Entity Name</th>
+      <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Agreement Date</th>
+      <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Agreed Price (₹/kg)</th>
+      <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Weekly Demand (kg)</th>
+      <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">DP</th>
+      <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Expected 1st Order</th>
+      <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Assigned To</th>
+      <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Action</th>
+    </tr>
+  );
+
+  if (customers.length === 0) {
+    return (
+      <div className="rounded-md border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>{headers}</thead>
+            <tbody>
+              <tr>
+                <td colSpan={9} className="px-3 py-16 text-center">
+                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                    <CheckCircle2 className="w-10 h-10 text-[#005c00] opacity-70" />
+                    <p className="font-semibold text-base text-foreground">✓ All Leads onboarded!</p>
+                    <p className="text-sm">No pending onboarding at the moment.</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>{headers}</thead>
+          <tbody className="divide-y divide-border">
+            {customers.map(c => (
+              <tr key={c.entityId} className="hover:bg-muted/20 transition-colors">
+                <td className="px-3 py-2.5 font-mono text-xs">{c.entityId}</td>
+                <td className="px-3 py-2.5 font-medium whitespace-nowrap">{c.customerName}</td>
+                <td className="px-3 py-2.5 whitespace-nowrap text-xs">
+                  {c.agreementDate ? formatDate(c.agreementDate) : <span className="text-muted-foreground">—</span>}
+                </td>
+                <td className="px-3 py-2.5 text-xs">
+                  {c.agreedPrice !== null ? `₹${c.agreedPrice}` : <span className="text-muted-foreground">—</span>}
+                </td>
+                <td className="px-3 py-2.5 text-xs">
+                  {c.weeklyDemandKg !== null ? `${c.weeklyDemandKg} kg` : <span className="text-muted-foreground">—</span>}
+                </td>
+                <td className="px-3 py-2.5 whitespace-nowrap text-xs">{c.dpName} ({c.dpId})</td>
+                <td className="px-3 py-2.5 whitespace-nowrap text-xs">
+                  {c.expectedFirstOrderDate ? formatDate(c.expectedFirstOrderDate) : <span className="text-muted-foreground">—</span>}
+                </td>
+                <td className="px-3 py-2.5 text-xs whitespace-nowrap">
+                  <div className="flex items-center gap-1 text-muted-foreground">
+                    <UserCheck className="w-3 h-3 shrink-0" />
+                    <span>{c.kam}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-2.5">
+                  <ActionButtons
+                    customer={c}
+                    currentUserEmail={currentUserEmail}
+                    onLogVisit={onLogVisit}
+                    onScheduleVisit={onScheduleVisit}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── Desktop Table: Regular tabs ─────────────────────────────────────────────
 
 function CustomerTableDesktop({
   customers,
+  currentUserEmail,
   onLogVisit,
   onScheduleVisit,
-  showOnboardPending = false,
 }: {
   customers: Customer[];
+  currentUserEmail: string;
   onLogVisit: (c: Customer) => void;
   onScheduleVisit: (c: Customer) => void;
-  showOnboardPending?: boolean;
 }) {
   if (customers.length === 0) {
-    if (showOnboardPending) {
-      return (
-        <>
-          {/* Keep headers visible even when empty */}
-          <div className="rounded-md border overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-muted/60 border-b">
-                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Entity ID</th>
-                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Customer ID</th>
-                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Customer Name</th>
-                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">BP Name (ID)</th>
-                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">DP Name (ID)</th>
-                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Order</th>
-                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Kg</th>
-                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Assigned To</th>
-                    <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td colSpan={9} className="px-3 py-16 text-center">
-                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                        <CheckCircle2 className="w-10 h-10 text-[#005c00] opacity-70" />
-                        <p className="font-semibold text-base text-foreground">✓ All Leads onboarded!</p>
-                        <p className="text-sm">No pending onboarding at the moment.</p>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      );
-    }
-
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
         <Users className="w-10 h-10 mb-3 opacity-30" />
@@ -731,7 +888,7 @@ function CustomerTableDesktop({
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Customer Name</th>
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">BP Name (ID)</th>
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">DP Name (ID)</th>
-              <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Order</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Delivered</th>
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Kg</th>
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Assigned To</th>
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Action</th>
@@ -748,10 +905,10 @@ function CustomerTableDesktop({
                 <td className="px-3 py-2.5 whitespace-nowrap text-xs">{c.bpName} ({c.bpId})</td>
                 <td className="px-3 py-2.5 whitespace-nowrap text-xs">{c.dpName} ({c.dpId})</td>
                 <td className="px-3 py-2.5 whitespace-nowrap text-xs">
-                  {c.lastOrderDate ? formatDate(c.lastOrderDate) : <span className="text-muted-foreground">—</span>}
+                  {c.lastDeliveryDate ? formatDate(c.lastDeliveryDate) : <span className="text-muted-foreground">—</span>}
                 </td>
                 <td className="px-3 py-2.5 text-xs">
-                  {c.lastOrderKg !== null ? `${c.lastOrderKg} kg` : <span className="text-muted-foreground">—</span>}
+                  {c.lastDeliveryKg !== null ? `${c.lastDeliveryKg} kg` : <span className="text-muted-foreground">—</span>}
                 </td>
                 <td className="px-3 py-2.5 text-xs whitespace-nowrap">
                   <div className="flex items-center gap-1 text-muted-foreground">
@@ -760,25 +917,12 @@ function CustomerTableDesktop({
                   </div>
                 </td>
                 <td className="px-3 py-2.5">
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      size="sm"
-                      className="bg-[#005c00] hover:bg-[#004800] text-white whitespace-nowrap text-xs h-7 px-2.5"
-                      onClick={() => onLogVisit(c)}
-                    >
-                      <ClipboardList className="w-3 h-3 mr-1" />
-                      Log Visit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="whitespace-nowrap text-xs h-7 px-2.5 border-primary text-primary hover:bg-primary/10"
-                      onClick={() => onScheduleVisit(c)}
-                    >
-                      <CalendarDays className="w-3 h-3 mr-1" />
-                      Schedule Visit
-                    </Button>
-                  </div>
+                  <ActionButtons
+                    customer={c}
+                    currentUserEmail={currentUserEmail}
+                    onLogVisit={onLogVisit}
+                    onScheduleVisit={onScheduleVisit}
+                  />
                 </td>
               </tr>
             ))}
@@ -793,23 +937,24 @@ function CustomerTableDesktop({
 
 function CustomerCardsMobile({
   customers,
+  currentUserEmail,
   onLogVisit,
   onScheduleVisit,
-  showOnboardPending = false,
+  isOnboardPending = false,
 }: {
   customers: Customer[];
+  currentUserEmail: string;
   onLogVisit: (c: Customer) => void;
   onScheduleVisit: (c: Customer) => void;
-  showOnboardPending?: boolean;
+  isOnboardPending?: boolean;
 }) {
   if (customers.length === 0) {
-    if (showOnboardPending) {
+    if (isOnboardPending) {
       return (
         <div className="space-y-3">
-          {/* Card header row always visible */}
           <div className="rounded-md border bg-muted/30 px-4 py-2 flex gap-2 text-xs font-semibold text-muted-foreground">
-            <span className="flex-1">Customer</span>
-            <span>BP / DP</span>
+            <span className="flex-1">Entity</span>
+            <span>Agreement</span>
           </div>
           <div className="flex flex-col items-center justify-center py-14 text-center">
             <CheckCircle2 className="w-10 h-10 text-[#005c00] opacity-70 mb-2" />
@@ -847,44 +992,71 @@ function CustomerCardsMobile({
 
             {/* Card body */}
             <div className="px-4 py-3 space-y-2">
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                <div>
-                  <p className="text-muted-foreground">BP</p>
-                  <p className="font-medium">{c.bpName} ({c.bpId})</p>
+              {isOnboardPending ? (
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                  <div>
+                    <p className="text-muted-foreground">Agreement Date</p>
+                    <p className="font-medium">{c.agreementDate ? formatDate(c.agreementDate) : "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Agreed Price</p>
+                    <p className="font-medium">{c.agreedPrice !== null ? `₹${c.agreedPrice}/kg` : "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Weekly Demand</p>
+                    <p className="font-medium">{c.weeklyDemandKg !== null ? `${c.weeklyDemandKg} kg` : "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">DP</p>
+                    <p className="font-medium">{c.dpName} ({c.dpId})</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Expected 1st Order</p>
+                    <p className="font-medium">{c.expectedFirstOrderDate ? formatDate(c.expectedFirstOrderDate) : "—"}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">DP</p>
-                  <p className="font-medium">{c.dpName} ({c.dpId})</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                  <div>
+                    <p className="text-muted-foreground">BP</p>
+                    <p className="font-medium">{c.bpName} ({c.bpId})</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">DP</p>
+                    <p className="font-medium">{c.dpName} ({c.dpId})</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Last Delivered</p>
+                    <p className="font-medium">{c.lastDeliveryDate ? formatDate(c.lastDeliveryDate) : "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Last Kg</p>
+                    <p className="font-medium">{c.lastDeliveryKg !== null ? `${c.lastDeliveryKg} kg` : "—"}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Last Order</p>
-                  <p className="font-medium">{c.lastOrderDate ? formatDate(c.lastOrderDate) : "—"}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Last Kg</p>
-                  <p className="font-medium">{c.lastOrderKg !== null ? `${c.lastOrderKg} kg` : "—"}</p>
-                </div>
-              </div>
+              )}
               <div className="flex items-center gap-1 text-xs text-muted-foreground pt-0.5">
                 <UserCheck className="w-3 h-3 shrink-0" />
                 <span>{c.kam}</span>
               </div>
             </div>
 
-            {/* Card footer - two action buttons */}
-            <div className="px-4 pb-3 grid grid-cols-2 gap-2">
-              <Button
-                size="sm"
-                className="w-full bg-[#005c00] hover:bg-[#004800] text-white text-xs"
-                onClick={() => onLogVisit(c)}
-              >
-                <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
-                Log Visit
-              </Button>
+            {/* Card footer */}
+            <div className="px-4 pb-3 flex gap-2 flex-wrap">
+              {c.kam === currentUserEmail && (
+                <Button
+                  size="sm"
+                  className="flex-1 bg-[#005c00] hover:bg-[#004800] text-white text-xs"
+                  onClick={() => onLogVisit(c)}
+                >
+                  <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
+                  Log Visit
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
-                className="w-full border-primary text-primary hover:bg-primary/10 text-xs"
+                className="flex-1 border-primary text-primary hover:bg-primary/10 text-xs"
                 onClick={() => onScheduleVisit(c)}
               >
                 <CalendarDays className="w-3.5 h-3.5 mr-1.5" />
@@ -901,12 +1073,16 @@ function CustomerCardsMobile({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function CustomersPage() {
+  const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [agentFilter, setAgentFilter] = useState("all");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [logVisitOpen, setLogVisitOpen] = useState(false);
   const [scheduleVisitOpen, setScheduleVisitOpen] = useState(false);
   const isMobile = useIsMobile();
+
+  // Use logged-in user email, fall back to demo value
+  const currentUserEmail = user?.email ?? CURRENT_USER_EMAIL;
 
   const allCustomers = useMemo(() => [
     ...SAMPLE_ONBOARD_PENDING,
@@ -944,8 +1120,6 @@ export default function CustomersPage() {
   const onboardFiltered = filter(SAMPLE_ONBOARD_PENDING);
   const notOrderedFiltered = filter(SAMPLE_NOT_ORDERED);
   const activeFiltered = filter(SAMPLE_ACTIVE);
-
-  const CustomerView = isMobile ? CustomerCardsMobile : CustomerTableDesktop;
 
   return (
     <div className="space-y-4">
@@ -1004,26 +1178,56 @@ export default function CustomersPage() {
         </TabsList>
 
         <TabsContent value="onboard_pending" className="mt-4">
-          <CustomerView
-            customers={onboardFiltered}
-            onLogVisit={handleLogVisit}
-            onScheduleVisit={handleScheduleVisit}
-            showOnboardPending={true}
-          />
+          {isMobile ? (
+            <CustomerCardsMobile
+              customers={onboardFiltered}
+              currentUserEmail={currentUserEmail}
+              onLogVisit={handleLogVisit}
+              onScheduleVisit={handleScheduleVisit}
+              isOnboardPending={true}
+            />
+          ) : (
+            <OnboardPendingTable
+              customers={onboardFiltered}
+              currentUserEmail={currentUserEmail}
+              onLogVisit={handleLogVisit}
+              onScheduleVisit={handleScheduleVisit}
+            />
+          )}
         </TabsContent>
         <TabsContent value="not_ordered" className="mt-4">
-          <CustomerView
-            customers={notOrderedFiltered}
-            onLogVisit={handleLogVisit}
-            onScheduleVisit={handleScheduleVisit}
-          />
+          {isMobile ? (
+            <CustomerCardsMobile
+              customers={notOrderedFiltered}
+              currentUserEmail={currentUserEmail}
+              onLogVisit={handleLogVisit}
+              onScheduleVisit={handleScheduleVisit}
+            />
+          ) : (
+            <CustomerTableDesktop
+              customers={notOrderedFiltered}
+              currentUserEmail={currentUserEmail}
+              onLogVisit={handleLogVisit}
+              onScheduleVisit={handleScheduleVisit}
+            />
+          )}
         </TabsContent>
         <TabsContent value="active" className="mt-4">
-          <CustomerView
-            customers={activeFiltered}
-            onLogVisit={handleLogVisit}
-            onScheduleVisit={handleScheduleVisit}
-          />
+          {isMobile ? (
+            <CustomerCardsMobile
+              customers={activeFiltered}
+              currentUserEmail={currentUserEmail}
+              onLogVisit={handleLogVisit}
+              onScheduleVisit={handleScheduleVisit}
+            />
+          ) : (
+            <CustomerTableDesktop
+              customers={activeFiltered}
+              currentUserEmail={currentUserEmail}
+              onLogVisit={handleLogVisit}
+              onScheduleVisit={handleScheduleVisit}
+            />
+          )}
         </TabsContent>
       </Tabs>
 
@@ -1036,6 +1240,7 @@ export default function CustomersPage() {
         customer={selectedCustomer}
         open={scheduleVisitOpen}
         onClose={() => setScheduleVisitOpen(false)}
+        currentUserEmail={currentUserEmail}
       />
     </div>
   );
