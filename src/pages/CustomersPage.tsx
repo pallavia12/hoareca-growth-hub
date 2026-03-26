@@ -1042,16 +1042,15 @@ function CustomerCardsMobile({
 
             {/* Card footer */}
             <div className="px-4 pb-3 flex gap-2 flex-wrap">
-              {c.kam === currentUserEmail && (
-                <Button
-                  size="sm"
-                  className="flex-1 bg-[#005c00] hover:bg-[#004800] text-white text-xs"
-                  onClick={() => onLogVisit(c)}
-                >
-                  <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
-                  Log Visit
-                </Button>
-              )}
+              <Button
+                size="sm"
+                disabled={c.kam !== currentUserEmail}
+                className="flex-1 bg-[#005c00] hover:bg-[#004800] text-white text-xs disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-auto"
+                onClick={() => c.kam === currentUserEmail && onLogVisit(c)}
+              >
+                <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
+                Log Visit
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
