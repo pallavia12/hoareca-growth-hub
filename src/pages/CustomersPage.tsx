@@ -735,16 +735,15 @@ function ActionButtons({
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      {isSelfAssigned && (
-        <Button
-          size="sm"
-          className="bg-[#005c00] hover:bg-[#004800] text-white whitespace-nowrap text-xs h-7 px-2.5"
-          onClick={() => onLogVisit(customer)}
-        >
-          <ClipboardList className="w-3 h-3 mr-1" />
-          Log Visit
-        </Button>
-      )}
+      <Button
+        size="sm"
+        disabled={!isSelfAssigned}
+        className="bg-[#005c00] hover:bg-[#004800] text-white whitespace-nowrap text-xs h-7 px-2.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-auto"
+        onClick={() => isSelfAssigned && onLogVisit(customer)}
+      >
+        <ClipboardList className="w-3 h-3 mr-1" />
+        Log Visit
+      </Button>
       <Button
         size="sm"
         variant="outline"
@@ -888,8 +887,8 @@ function CustomerTableDesktop({
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Customer Name</th>
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">BP Name (ID)</th>
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">DP Name (ID)</th>
-              <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Delivered</th>
-              <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Kg</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Delivery Date</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Order Kg</th>
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Assigned To</th>
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Action</th>
             </tr>
@@ -1026,11 +1025,11 @@ function CustomerCardsMobile({
                     <p className="font-medium">{c.dpName} ({c.dpId})</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Last Delivered</p>
+                    <p className="text-muted-foreground">Last Delivery Date</p>
                     <p className="font-medium">{c.lastDeliveryDate ? formatDate(c.lastDeliveryDate) : "—"}</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Last Kg</p>
+                    <p className="text-muted-foreground">Last Order Kg</p>
                     <p className="font-medium">{c.lastDeliveryKg !== null ? `${c.lastDeliveryKg} kg` : "—"}</p>
                   </div>
                 </div>
@@ -1043,16 +1042,15 @@ function CustomerCardsMobile({
 
             {/* Card footer */}
             <div className="px-4 pb-3 flex gap-2 flex-wrap">
-              {c.kam === currentUserEmail && (
-                <Button
-                  size="sm"
-                  className="flex-1 bg-[#005c00] hover:bg-[#004800] text-white text-xs"
-                  onClick={() => onLogVisit(c)}
-                >
-                  <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
-                  Log Visit
-                </Button>
-              )}
+              <Button
+                size="sm"
+                disabled={c.kam !== currentUserEmail}
+                className="flex-1 bg-[#005c00] hover:bg-[#004800] text-white text-xs disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-auto"
+                onClick={() => c.kam === currentUserEmail && onLogVisit(c)}
+              >
+                <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
+                Log Visit
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
