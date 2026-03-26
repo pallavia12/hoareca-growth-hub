@@ -887,8 +887,8 @@ function CustomerTableDesktop({
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Customer Name</th>
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">BP Name (ID)</th>
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">DP Name (ID)</th>
-              <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Delivered</th>
-              <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Kg</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Delivery Date</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Last Order Kg</th>
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Assigned To</th>
               <th className="px-3 py-2.5 text-left font-semibold text-xs whitespace-nowrap">Action</th>
             </tr>
