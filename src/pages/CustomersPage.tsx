@@ -735,16 +735,15 @@ function ActionButtons({
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      {isSelfAssigned && (
-        <Button
-          size="sm"
-          className="bg-[#005c00] hover:bg-[#004800] text-white whitespace-nowrap text-xs h-7 px-2.5"
-          onClick={() => onLogVisit(customer)}
-        >
-          <ClipboardList className="w-3 h-3 mr-1" />
-          Log Visit
-        </Button>
-      )}
+      <Button
+        size="sm"
+        disabled={!isSelfAssigned}
+        className="bg-[#005c00] hover:bg-[#004800] text-white whitespace-nowrap text-xs h-7 px-2.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-auto"
+        onClick={() => isSelfAssigned && onLogVisit(customer)}
+      >
+        <ClipboardList className="w-3 h-3 mr-1" />
+        Log Visit
+      </Button>
       <Button
         size="sm"
         variant="outline"
