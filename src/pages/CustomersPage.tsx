@@ -1025,11 +1025,11 @@ function CustomerCardsMobile({
                     <p className="font-medium">{c.dpName} ({c.dpId})</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Last Delivered</p>
+                    <p className="text-muted-foreground">Last Delivery Date</p>
                     <p className="font-medium">{c.lastDeliveryDate ? formatDate(c.lastDeliveryDate) : "—"}</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Last Kg</p>
+                    <p className="text-muted-foreground">Last Order Kg</p>
                     <p className="font-medium">{c.lastDeliveryKg !== null ? `${c.lastDeliveryKg} kg` : "—"}</p>
                   </div>
                 </div>
