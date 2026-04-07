@@ -386,10 +386,12 @@ function LogVisitDialog({
   customer,
   open,
   onClose,
+  isOnboardPending = false,
 }: {
   customer: Customer | null;
   open: boolean;
   onClose: () => void;
+  isOnboardPending?: boolean;
 }) {
   const { toast } = useToast();
   const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
@@ -407,7 +409,7 @@ function LogVisitDialog({
   const validate = () => {
     const e: Record<string, string> = {};
     if (selectedReasons.length === 0) e.reasons = "Select at least one reason.";
-    if (!orderStatus) e.orderStatus = "Order status is required.";
+    if (!isOnboardPending && !orderStatus) e.orderStatus = "Order status is required.";
     if (!remarks.trim()) e.remarks = "Remarks are required.";
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -486,7 +488,8 @@ function LogVisitDialog({
 
           <div className="border-t border-dashed" />
 
-          {/* Section 2 – Order History */}
+          {/* Section 2 – Order History (hidden for Onboard Pending) */}
+          {!isOnboardPending && (
           <section className="space-y-3">
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Delivery History</h3>
             <div className="grid grid-cols-2 gap-4 text-sm">
@@ -503,8 +506,10 @@ function LogVisitDialog({
               <CalendarGrid history={customer.orderHistory} today={TODAY} />
             </div>
           </section>
+          )}
 
-          {/* Section 3 – Order Details (expandable) */}
+          {/* Section 3 – Order Details (hidden for Onboard Pending) */}
+          {!isOnboardPending && (
           <section>
             <Button variant="outline" size="sm" disabled={!hasOrders} onClick={() => setShowOrders(v => !v)} className="w-full flex items-center justify-between text-xs">
               <span>View Order Details</span>
@@ -539,6 +544,7 @@ function LogVisitDialog({
               </div>
             )}
           </section>
+          )}
 
           <div className="border-t border-dashed" />
 
@@ -559,6 +565,7 @@ function LogVisitDialog({
               {errors.reasons && <p className="text-xs text-destructive">{errors.reasons}</p>}
             </div>
 
+            {!isOnboardPending && (
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">Order Status <span className="text-destructive">*</span></Label>
               <Select value={orderStatus} onValueChange={setOrderStatus}>
@@ -573,6 +580,7 @@ function LogVisitDialog({
               </Select>
               {errors.orderStatus && <p className="text-xs text-destructive">{errors.orderStatus}</p>}
             </div>
+            )}
 
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">Remarks <span className="text-destructive">*</span></Label>
@@ -947,6 +955,7 @@ export default function CustomersPage() {
   const [dateTo, setDateTo] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [logVisitOpen, setLogVisitOpen] = useState(false);
+  const [logVisitOnboard, setLogVisitOnboard] = useState(false);
   const [scheduleVisitOpen, setScheduleVisitOpen] = useState(false);
   const isMobile = useIsMobile();
 
@@ -1154,7 +1163,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="not_ordered">
+      <Tabs defaultValue="not_ordered" onValueChange={v => setLogVisitOnboard(v === "onboard_pending")}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="onboard_pending" className="flex-1 sm:flex-none">
             Onboard Pending
@@ -1195,7 +1204,7 @@ export default function CustomersPage() {
         </TabsContent>
       </Tabs>
 
-      <LogVisitDialog customer={selectedCustomer} open={logVisitOpen} onClose={() => setLogVisitOpen(false)} />
+      <LogVisitDialog customer={selectedCustomer} open={logVisitOpen} onClose={() => setLogVisitOpen(false)} isOnboardPending={logVisitOnboard} />
       <ScheduleVisitDialog customer={selectedCustomer} open={scheduleVisitOpen} onClose={() => setScheduleVisitOpen(false)} currentUserEmail={currentUserEmail} kamOptions={effectiveKamOptions} />
     </div>
   );
