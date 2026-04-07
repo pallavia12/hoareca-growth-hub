@@ -979,6 +979,29 @@ export default function CustomersPage() {
         ? partners.find(p => p.id === agreement.distribution_partner || p.name === agreement.distribution_partner)
         : null;
 
+      // Generate sample order history based on delivery date
+      const history: DayOrder[] = [];
+      if (order?.delivery_date) {
+        const delivDate = new Date(order.delivery_date + "T00:00:00");
+        const demandKg = order.demand_per_week_kg ?? 15;
+        const perDelivery = [
+          Math.round(demandKg * 0.4),
+          Math.round(demandKg * 0.3),
+          Math.round(demandKg * 0.35),
+          Math.round(demandKg * 0.25),
+          Math.round(demandKg * 0.45),
+        ];
+        let idx = 0;
+        for (let d = 0; d < 14; d += 2 + (d % 3 === 0 ? 1 : 0)) {
+          const histDate = new Date(delivDate.getTime() - d * 86400000);
+          history.push({
+            date: histDate.toISOString().slice(0, 10),
+            kg: perDelivery[idx % perDelivery.length],
+          });
+          idx++;
+        }
+      }
+
       return {
         entityId: lead?.id?.slice(0, 8) ?? agreement.id.slice(0, 8),
         customerId: agreement.esign_status === "signed" ? agreement.id.slice(0, 6).toUpperCase() : null,
@@ -998,52 +1021,8 @@ export default function CustomersPage() {
         localityId: lead?.pincode ?? "—",
         address: lead?.outlet_address ?? "—",
         pmContact: lead?.pm_contact ?? lead?.contact_number ?? "—",
-        // Generate sample order history based on delivery date
-        const history: DayOrder[] = [];
-        if (order?.delivery_date) {
-          const delivDate = new Date(order.delivery_date + "T00:00:00");
-          // Simulate order pattern: deliveries every 2-3 days going back ~14 days
-          const demandKg = order.demand_per_week_kg ?? 15;
-          const perDelivery = [
-            Math.round(demandKg * 0.4),
-            Math.round(demandKg * 0.3),
-            Math.round(demandKg * 0.35),
-            Math.round(demandKg * 0.25),
-            Math.round(demandKg * 0.45),
-          ];
-          let idx = 0;
-          for (let d = 0; d < 14; d += 2 + (d % 3 === 0 ? 1 : 0)) {
-            const histDate = new Date(delivDate.getTime() - d * 86400000);
-            history.push({
-              date: histDate.toISOString().slice(0, 10),
-              kg: perDelivery[idx % perDelivery.length],
-            });
-            idx++;
-          }
-        }
-
-        return {
-          entityId: lead?.id?.slice(0, 8) ?? agreement.id.slice(0, 8),
-          customerId: agreement.esign_status === "signed" ? agreement.id.slice(0, 6).toUpperCase() : null,
-          customerName: lead?.client_name ?? "Unknown",
-          bpName: "—",
-          bpId: "—",
-          dpName: dp?.name ?? agreement.distribution_partner ?? "—",
-          dpId: dp?.id?.slice(0, 4) ?? "—",
-          agreementDate: agreement.created_at ? agreement.created_at.slice(0, 10) : null,
-          agreedPrice: agreement.agreed_price_per_kg ?? null,
-          weeklyDemandKg: agreement.expected_weekly_volume_kg ?? null,
-          expectedFirstOrderDate: agreement.expected_first_order_date ?? null,
-          lastDeliveryDate: order?.delivery_date ?? null,
-          lastDeliveryKg: order?.demand_per_week_kg ?? null,
-          kam: lead?.created_by ?? currentUserEmail,
-          locality: lead?.locality ?? "—",
-          localityId: lead?.pincode ?? "—",
-          address: lead?.outlet_address ?? "—",
-          pmContact: lead?.pm_contact ?? lead?.contact_number ?? "—",
-          orderHistory: history,
-        };
-      });
+        orderHistory: history,
+      };
   }, [agreements, orders, leads, partners, currentUserEmail]);
 
   // Derive filter options
