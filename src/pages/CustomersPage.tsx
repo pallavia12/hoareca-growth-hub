@@ -955,6 +955,7 @@ export default function CustomersPage() {
   const [dateTo, setDateTo] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [logVisitOpen, setLogVisitOpen] = useState(false);
+  const [logVisitOnboard, setLogVisitOnboard] = useState(false);
   const [scheduleVisitOpen, setScheduleVisitOpen] = useState(false);
   const isMobile = useIsMobile();
 
@@ -1162,7 +1163,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="not_ordered">
+      <Tabs defaultValue="not_ordered" onValueChange={v => setLogVisitOnboard(v === "onboard_pending")}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="onboard_pending" className="flex-1 sm:flex-none">
             Onboard Pending
@@ -1203,7 +1204,7 @@ export default function CustomersPage() {
         </TabsContent>
       </Tabs>
 
-      <LogVisitDialog customer={selectedCustomer} open={logVisitOpen} onClose={() => setLogVisitOpen(false)} />
+      <LogVisitDialog customer={selectedCustomer} open={logVisitOpen} onClose={() => setLogVisitOpen(false)} isOnboardPending={logVisitOnboard} />
       <ScheduleVisitDialog customer={selectedCustomer} open={scheduleVisitOpen} onClose={() => setScheduleVisitOpen(false)} currentUserEmail={currentUserEmail} kamOptions={effectiveKamOptions} />
     </div>
   );
