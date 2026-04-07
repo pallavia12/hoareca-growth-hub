@@ -166,11 +166,22 @@ serve(async (req) => {
     const step4Leads = [
       { client_name: "Urban Bistro", pincode: "560034", locality: "Koramangala", contact_number: "9800000001", purchase_manager_name: "Amit R", status: "qualified", created_by: "kam@ninjacart.com", visit_count: 2 },
       { client_name: "Brew House", pincode: "560038", locality: "Indiranagar", contact_number: "9800000002", purchase_manager_name: "Priya S", status: "qualified", created_by: "kam@ninjacart.com", visit_count: 1 },
-      { client_name: "Cloud Kitchen Co", pincode: "560095", locality: "Whitefield", contact_number: "9800000003", purchase_manager_name: "Raj M", status: "qualified", created_by: "kam@ninjacart.com", visit_count: 3 },
-      { client_name: "Spice Garden", pincode: "560001", locality: "MG Road", contact_number: "9800000004", purchase_manager_name: "Neha K", status: "qualified", created_by: "kam@ninjacart.com", visit_count: 2 },
+      { client_name: "Cloud Kitchen Co", pincode: "560095", locality: "Whitefield", contact_number: "9800000003", purchase_manager_name: "Raj M", status: "qualified", created_by: null, visit_count: 3 },
+      { client_name: "Spice Garden", pincode: "560001", locality: "MG Road", contact_number: "9800000004", purchase_manager_name: "Neha K", status: "qualified", created_by: null, visit_count: 2 },
       { client_name: "Cafe Noir", pincode: "560034", locality: "Koramangala", contact_number: "9800000005", purchase_manager_name: "Vikram P", status: "qualified", created_by: "kam@ninjacart.com", visit_count: 2 },
       { client_name: "Gourmet Hub", pincode: "560038", locality: "Indiranagar", contact_number: "9800000006", purchase_manager_name: "Sneha D", status: "qualified", created_by: "kam@ninjacart.com", visit_count: 3 },
     ];
+
+    // Calculate dynamic dates relative to today
+    const now = new Date();
+    const todayIso = now.toISOString().slice(0, 10);
+    const daysAgo = (n: number) => new Date(now.getTime() - n * 86400000).toISOString().slice(0, 10);
+    const daysFromNow = (n: number) => new Date(now.getTime() + n * 86400000).toISOString().slice(0, 10);
+    // Current week Monday
+    const dayOfWeek = now.getDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const thisMonday = new Date(now.getTime() + mondayOffset * 86400000);
+    const thisWeekDay = (n: number) => new Date(thisMonday.getTime() + n * 86400000).toISOString().slice(0, 10);
 
     for (const sl of step4Leads) {
       const { data: existingLead } = await supabase.from("leads").select("id").eq("client_name", sl.client_name).maybeSingle();
@@ -242,6 +253,69 @@ serve(async (req) => {
         });
       }
       // Urban Bistro and Brew House have no agreement → Quality Pending
+    }
+
+    // ── Seed Step 5 Customers: leads with agreements for all 3 tabs ──────────
+    // created_by is null so kam defaults to current logged-in user
+    const step5Leads = [
+      // Onboard Pending: signed agreement, no delivery yet
+      { client_name: "Fresh Greens Deli", pincode: "560034", locality: "Koramangala", contact_number: "9800100001", purchase_manager_name: "Anita M", pm_contact: "9800100002", status: "qualified", created_by: null, visit_count: 3, outlet_address: "45, 4th Cross, Koramangala 5th Block, Bangalore" },
+      { client_name: "Sunrise Bakery", pincode: "560038", locality: "Indiranagar", contact_number: "9800100003", purchase_manager_name: "Kiran T", pm_contact: "9800100004", status: "qualified", created_by: null, visit_count: 2, outlet_address: "12th Main, HAL 2nd Stage, Indiranagar" },
+      // Current Week Not Ordered: signed, delivery was last week
+      { client_name: "Metro Kitchen", pincode: "560001", locality: "MG Road", contact_number: "9800100005", purchase_manager_name: "Deepak S", pm_contact: "9800100006", status: "qualified", created_by: null, visit_count: 4, outlet_address: "23, Brigade Road, MG Road, Bangalore" },
+      { client_name: "Olive Garden Cafe", pincode: "560095", locality: "Whitefield", contact_number: "9800100007", purchase_manager_name: "Meera R", pm_contact: "9800100008", status: "qualified", created_by: null, visit_count: 3, outlet_address: "ITPL Main Road, Whitefield, Bangalore" },
+      // Active Customers: signed, delivery this week
+      { client_name: "The Green Bowl", pincode: "560034", locality: "Koramangala", contact_number: "9800100009", purchase_manager_name: "Suresh K", pm_contact: "9800100010", status: "qualified", created_by: null, visit_count: 5, outlet_address: "80ft Road, Koramangala 6th Block, Bangalore" },
+      { client_name: "Avocado Express", pincode: "560038", locality: "Indiranagar", contact_number: "9800100011", purchase_manager_name: "Divya N", pm_contact: "9800100012", status: "qualified", created_by: null, visit_count: 4, outlet_address: "100ft Road, Indiranagar, Bangalore" },
+    ];
+
+    const step5Configs = [
+      // Onboard Pending: no delivery date on order
+      { deliveryDate: null, demandKg: 20, agreementStatus: "signed", esignStatus: "signed", agreedPrice: 150, weeklyVolume: 20, dp: "DP-Koramangala", expectedFirst: daysFromNow(5), paymentType: "credit", creditDays: 7 },
+      { deliveryDate: null, demandKg: 12, agreementStatus: "agreement_sent", esignStatus: "sent", agreedPrice: 130, weeklyVolume: 12, dp: "DP-Indiranagar", expectedFirst: daysFromNow(3), paymentType: "cash_and_carry", creditDays: null },
+      // Current Week Not Ordered: delivery was 10 days ago
+      { deliveryDate: daysAgo(10), demandKg: 18, agreementStatus: "signed", esignStatus: "signed", agreedPrice: 145, weeklyVolume: 18, dp: "DP-Central", expectedFirst: daysAgo(20), paymentType: "credit", creditDays: 15 },
+      { deliveryDate: daysAgo(8), demandKg: 22, agreementStatus: "signed", esignStatus: "signed", agreedPrice: 155, weeklyVolume: 22, dp: "DP-Whitefield", expectedFirst: daysAgo(15), paymentType: "credit", creditDays: 10 },
+      // Active Customers: delivery this week
+      { deliveryDate: thisWeekDay(1), demandKg: 25, agreementStatus: "signed", esignStatus: "signed", agreedPrice: 140, weeklyVolume: 25, dp: "DP-Koramangala", expectedFirst: daysAgo(30), paymentType: "credit", creditDays: 15 },
+      { deliveryDate: thisWeekDay(2), demandKg: 15, agreementStatus: "signed", esignStatus: "signed", agreedPrice: 135, weeklyVolume: 15, dp: "DP-Indiranagar", expectedFirst: daysAgo(25), paymentType: "cash_and_carry", creditDays: null },
+    ];
+
+    for (let i = 0; i < step5Leads.length; i++) {
+      const sl = step5Leads[i];
+      const cfg = step5Configs[i];
+      const { data: existingLead } = await supabase.from("leads").select("id").eq("client_name", sl.client_name).maybeSingle();
+      if (existingLead) continue;
+
+      const { data: leadData } = await supabase.from("leads").insert(sl).select("id").single();
+      if (!leadData) continue;
+
+      const { data: orderData } = await supabase.from("sample_orders").insert({
+        lead_id: leadData.id,
+        status: "sample_delivered",
+        remarks: "Step 5 demo data",
+        delivery_date: cfg.deliveryDate,
+        sample_qty_units: 5,
+        demand_per_week_kg: cfg.demandKg,
+      }).select("id").single();
+      if (!orderData) continue;
+
+      await supabase.from("agreements").insert({
+        sample_order_id: orderData.id,
+        status: cfg.agreementStatus,
+        quality_feedback: true,
+        pricing_type: "weekly",
+        agreed_price_per_kg: cfg.agreedPrice,
+        payment_type: cfg.paymentType,
+        credit_days: cfg.creditDays,
+        outlets_in_bangalore: 1,
+        delivery_slot: "9am-12pm",
+        distribution_partner: cfg.dp,
+        expected_first_order_date: cfg.expectedFirst,
+        expected_weekly_volume_kg: cfg.weeklyVolume,
+        mail_id: `contact@${sl.client_name.toLowerCase().replace(/\s+/g, "")}.com`,
+        esign_status: cfg.esignStatus,
+      });
     }
 
     return new Response(JSON.stringify({ success: true, users: results }), {
