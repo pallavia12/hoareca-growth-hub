@@ -979,6 +979,29 @@ export default function CustomersPage() {
         ? partners.find(p => p.id === agreement.distribution_partner || p.name === agreement.distribution_partner)
         : null;
 
+      // Generate sample order history based on delivery date
+      const history: DayOrder[] = [];
+      if (order?.delivery_date) {
+        const delivDate = new Date(order.delivery_date + "T00:00:00");
+        const demandKg = order.demand_per_week_kg ?? 15;
+        const perDelivery = [
+          Math.round(demandKg * 0.4),
+          Math.round(demandKg * 0.3),
+          Math.round(demandKg * 0.35),
+          Math.round(demandKg * 0.25),
+          Math.round(demandKg * 0.45),
+        ];
+        let idx = 0;
+        for (let d = 0; d < 14; d += 2 + (d % 3 === 0 ? 1 : 0)) {
+          const histDate = new Date(delivDate.getTime() - d * 86400000);
+          history.push({
+            date: histDate.toISOString().slice(0, 10),
+            kg: perDelivery[idx % perDelivery.length],
+          });
+          idx++;
+        }
+      }
+
       return {
         entityId: lead?.id?.slice(0, 8) ?? agreement.id.slice(0, 8),
         customerId: agreement.esign_status === "signed" ? agreement.id.slice(0, 6).toUpperCase() : null,
@@ -998,7 +1021,7 @@ export default function CustomersPage() {
         localityId: lead?.pincode ?? "—",
         address: lead?.outlet_address ?? "—",
         pmContact: lead?.pm_contact ?? lead?.contact_number ?? "—",
-        orderHistory: [],
+        orderHistory: history,
       };
     });
   }, [agreements, orders, leads, partners, currentUserEmail]);
