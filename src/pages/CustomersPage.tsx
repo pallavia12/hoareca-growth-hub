@@ -1023,6 +1023,7 @@ export default function CustomersPage() {
         pmContact: lead?.pm_contact ?? lead?.contact_number ?? "—",
         orderHistory: history,
       };
+    });
   }, [agreements, orders, leads, partners, currentUserEmail]);
 
   // Derive filter options
