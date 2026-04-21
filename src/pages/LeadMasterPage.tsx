@@ -471,11 +471,15 @@ export default function LeadMasterPage() {
 
 function StageBlockMobile({ title, agent, calls, visits, days, isCustomerStage, customerId }: { title: string; agent: string; calls?: number; visits: number; days: number; isCustomerStage?: boolean; customerId?: string }) {
   if (isCustomerStage) {
+    const hasId = customerId && customerId !== "—";
     return (
       <div className="bg-muted/40 rounded-md p-1.5 text-[10px] space-y-0.5">
         <p className="font-semibold text-foreground text-[11px]">{title}</p>
-        <p className="truncate"><span className="text-muted-foreground">Status:</span> {customerId && customerId !== "—" ? "✅ Created" : "Pending"}</p>
-        {customerId && customerId !== "—" && <p className="font-mono"><span className="text-muted-foreground">ID:</span> {customerId}</p>}
+        {hasId ? (
+          <p className="font-mono break-all"><span className="text-muted-foreground font-sans">CustomerId:</span> {customerId}</p>
+        ) : (
+          <p className="text-muted-foreground">—</p>
+        )}
       </div>
     );
   }
