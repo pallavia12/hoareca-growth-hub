@@ -46,6 +46,20 @@ export default function LeadMasterPage() {
   }, []);
 
   const masterData = useMemo(() => {
+    // Demo: force first 5 prospects into Customer stage with synthetic customer IDs
+    // Index 0 → 3 customer IDs, Index 1 → 2 customer IDs, others → 1 customer ID
+    const CUSTOMER_DEMO_COUNT = 5;
+    const customerIdBase = 78000;
+    let customerSeq = 0;
+    const allocateIds = (count: number) => {
+      const ids: string[] = [];
+      for (let i = 0; i < count; i++) {
+        ids.push(String(customerIdBase + customerSeq));
+        customerSeq++;
+      }
+      return ids;
+    };
+
     return prospects.map((prospect, idx) => {
       const lead = leads.find(l => l.prospect_id === prospect.id);
       const order = lead ? orders.find(o => o.lead_id === lead.id) : null;
@@ -62,6 +76,19 @@ export default function LeadMasterPage() {
         currentStage = "Lead";
       }
 
+      // Force first N to Customer for demo
+      const isDemoCustomer = idx < CUSTOMER_DEMO_COUNT;
+      if (isDemoCustomer) currentStage = "Customer";
+
+      // Allocate customer IDs: idx 0 → 3, idx 1 → 2, others → 1
+      let customerIds: string[] = [];
+      if (isDemoCustomer) {
+        const count = idx === 0 ? 3 : idx === 1 ? 2 : 1;
+        customerIds = allocateIds(count);
+      } else if (agreement?.status === "signed") {
+        customerIds = [agreement.id.slice(0, 8).toUpperCase()];
+      }
+
       const prospectDate = new Date(prospect.created_at);
       const leadDate = lead ? new Date(lead.created_at) : null;
       const stage1Days = leadDate ? differenceInDays(leadDate, prospectDate) : null;
@@ -76,6 +103,12 @@ export default function LeadMasterPage() {
       const totalVisits = lead?.visit_count || 0;
       const totalDays = stage1Days !== null ? (stage1Days + (stage2Days || 0) + (stage3Days || 0)) : 0;
 
+      // Customer-created timestamp = first customer creation; for demo we anchor relative to prospect date
+      const customerCreatedAt = customerIds.length > 0
+        ? (agreement?.status === "signed" && !isDemoCustomer
+            ? agreement.updated_at
+            : new Date(prospectDate.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString())
+        : undefined;
 
       return {
         prospect,
@@ -89,7 +122,9 @@ export default function LeadMasterPage() {
         totalCalls,
         totalVisits,
         totalDays,
-        customerId: agreement?.status === "signed" ? agreement.id.slice(0, 8).toUpperCase() : "—",
+        customerIds,
+        customerId: customerIds.length > 0 ? customerIds.join(", ") : "—",
+        customerCreatedAt,
       };
     });
   }, [prospects, leads, orders, agreements]);
@@ -157,6 +192,10 @@ export default function LeadMasterPage() {
       if (act.includes("signed")) return "Agreement — Signed";
       if (act.includes("feedback")) return "Agreement — Quality Feedback";
       return "Agreement — Follow-up";
+    }
+    if (type === "customer") {
+      if (act.includes("created")) return "Customer — Customer created";
+      return "Customer — Update";
     }
     return action || "Visit";
   };
@@ -348,7 +387,7 @@ export default function LeadMasterPage() {
                         <TimelineItem label="Lead Converted" date={row.lead?.created_at} active={!!row.lead} />
                         <TimelineItem label="Sample Order" date={row.order?.created_at} active={!!row.order} />
                         <TimelineItem label="Agreement Signed" date={row.agreement?.created_at} active={!!row.agreement && ["agreement_sent", "signed"].includes(row.agreement.status)} />
-                        <TimelineItem label="Customer ID Created" date={row.agreement?.status === "signed" ? row.agreement.updated_at : undefined} active={row.agreement?.status === "signed"} />
+                        <TimelineItem label="Customer ID Created" date={row.customerCreatedAt} active={!!row.customerCreatedAt} />
                       </div>
                     </div>
 
@@ -359,10 +398,27 @@ export default function LeadMasterPage() {
                       </h4>
                       {(() => {
                         const visits = getLastVisits(row.prospect.id, row.lead?.id);
-                        const logsToShow: ActivityLog[] = visits.data.length > 0
-                          ? (visits.data as ActivityLog[])
-                          : DEMO_VISIT_EXAMPLES;
-                        const isDemoData = visits.data.length === 0;
+                        // Synthetic "Customer created" entries — one per customer ID
+                        const creatorName = row.stage3.agent !== "—" ? row.stage3.agent : (row.lead?.created_by?.split("@")[0] || "kam");
+                        const customerVisits: ActivityLog[] = (row.customerIds || []).map((cid, i) => ({
+                          id: `cust-${row.prospect.id}-${cid}`,
+                          timestamp: new Date(
+                            (row.customerCreatedAt ? new Date(row.customerCreatedAt).getTime() : Date.now())
+                            + i * 60 * 60 * 1000
+                          ).toISOString(),
+                          entity_id: row.prospect.id,
+                          entity_type: "customer",
+                          action: "customer created",
+                          user_email: `${creatorName}@company.com`,
+                          user_role: "kam",
+                          notes: `Customer ID: ${cid}, Customer Name: ${row.prospect.restaurant_name}, CreatedBy: ${creatorName}`,
+                          before_state: null,
+                          after_state: null,
+                        }));
+                        const realData = visits.data as ActivityLog[];
+                        const combined = [...customerVisits, ...realData];
+                        const logsToShow: ActivityLog[] = combined.length > 0 ? combined : DEMO_VISIT_EXAMPLES;
+                        const isDemoData = combined.length === 0;
                         return (
                           <div className="space-y-0 divide-y divide-border rounded-md border overflow-hidden">
                             {isDemoData && (
@@ -415,11 +471,15 @@ export default function LeadMasterPage() {
 
 function StageBlockMobile({ title, agent, calls, visits, days, isCustomerStage, customerId }: { title: string; agent: string; calls?: number; visits: number; days: number; isCustomerStage?: boolean; customerId?: string }) {
   if (isCustomerStage) {
+    const hasId = customerId && customerId !== "—";
     return (
       <div className="bg-muted/40 rounded-md p-1.5 text-[10px] space-y-0.5">
         <p className="font-semibold text-foreground text-[11px]">{title}</p>
-        <p className="truncate"><span className="text-muted-foreground">Status:</span> {customerId && customerId !== "—" ? "✅ Created" : "Pending"}</p>
-        {customerId && customerId !== "—" && <p className="font-mono"><span className="text-muted-foreground">ID:</span> {customerId}</p>}
+        {hasId ? (
+          <p className="font-mono break-all"><span className="text-muted-foreground font-sans">CustomerId:</span> {customerId}</p>
+        ) : (
+          <p className="text-muted-foreground">—</p>
+        )}
       </div>
     );
   }
