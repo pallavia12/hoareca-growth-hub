@@ -46,6 +46,20 @@ export default function LeadMasterPage() {
   }, []);
 
   const masterData = useMemo(() => {
+    // Demo: force first 5 prospects into Customer stage with synthetic customer IDs
+    // Index 0 → 3 customer IDs, Index 1 → 2 customer IDs, others → 1 customer ID
+    const CUSTOMER_DEMO_COUNT = 5;
+    const customerIdBase = 78000;
+    let customerSeq = 0;
+    const allocateIds = (count: number) => {
+      const ids: string[] = [];
+      for (let i = 0; i < count; i++) {
+        ids.push(String(customerIdBase + customerSeq));
+        customerSeq++;
+      }
+      return ids;
+    };
+
     return prospects.map((prospect, idx) => {
       const lead = leads.find(l => l.prospect_id === prospect.id);
       const order = lead ? orders.find(o => o.lead_id === lead.id) : null;
@@ -62,6 +76,19 @@ export default function LeadMasterPage() {
         currentStage = "Lead";
       }
 
+      // Force first N to Customer for demo
+      const isDemoCustomer = idx < CUSTOMER_DEMO_COUNT;
+      if (isDemoCustomer) currentStage = "Customer";
+
+      // Allocate customer IDs: idx 0 → 3, idx 1 → 2, others → 1
+      let customerIds: string[] = [];
+      if (isDemoCustomer) {
+        const count = idx === 0 ? 3 : idx === 1 ? 2 : 1;
+        customerIds = allocateIds(count);
+      } else if (agreement?.status === "signed") {
+        customerIds = [agreement.id.slice(0, 8).toUpperCase()];
+      }
+
       const prospectDate = new Date(prospect.created_at);
       const leadDate = lead ? new Date(lead.created_at) : null;
       const stage1Days = leadDate ? differenceInDays(leadDate, prospectDate) : null;
@@ -76,6 +103,12 @@ export default function LeadMasterPage() {
       const totalVisits = lead?.visit_count || 0;
       const totalDays = stage1Days !== null ? (stage1Days + (stage2Days || 0) + (stage3Days || 0)) : 0;
 
+      // Customer-created timestamp = first customer creation; for demo we anchor relative to prospect date
+      const customerCreatedAt = customerIds.length > 0
+        ? (agreement?.status === "signed" && !isDemoCustomer
+            ? agreement.updated_at
+            : new Date(prospectDate.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString())
+        : undefined;
 
       return {
         prospect,
@@ -89,7 +122,9 @@ export default function LeadMasterPage() {
         totalCalls,
         totalVisits,
         totalDays,
-        customerId: agreement?.status === "signed" ? agreement.id.slice(0, 8).toUpperCase() : "—",
+        customerIds,
+        customerId: customerIds.length > 0 ? customerIds.join(", ") : "—",
+        customerCreatedAt,
       };
     });
   }, [prospects, leads, orders, agreements]);
