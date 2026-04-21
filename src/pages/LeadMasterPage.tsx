@@ -383,7 +383,7 @@ export default function LeadMasterPage() {
                         <TimelineItem label="Lead Converted" date={row.lead?.created_at} active={!!row.lead} />
                         <TimelineItem label="Sample Order" date={row.order?.created_at} active={!!row.order} />
                         <TimelineItem label="Agreement Signed" date={row.agreement?.created_at} active={!!row.agreement && ["agreement_sent", "signed"].includes(row.agreement.status)} />
-                        <TimelineItem label="Customer ID Created" date={row.agreement?.status === "signed" ? row.agreement.updated_at : undefined} active={row.agreement?.status === "signed"} />
+                        <TimelineItem label="Customer ID Created" date={row.customerCreatedAt} active={!!row.customerCreatedAt} />
                       </div>
                     </div>
 
