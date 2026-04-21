@@ -193,6 +193,10 @@ export default function LeadMasterPage() {
       if (act.includes("feedback")) return "Agreement — Quality Feedback";
       return "Agreement — Follow-up";
     }
+    if (type === "customer") {
+      if (act.includes("created")) return "Customer — Customer created";
+      return "Customer — Update";
+    }
     return action || "Visit";
   };
 
