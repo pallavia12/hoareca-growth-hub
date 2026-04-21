@@ -394,10 +394,27 @@ export default function LeadMasterPage() {
                       </h4>
                       {(() => {
                         const visits = getLastVisits(row.prospect.id, row.lead?.id);
-                        const logsToShow: ActivityLog[] = visits.data.length > 0
-                          ? (visits.data as ActivityLog[])
-                          : DEMO_VISIT_EXAMPLES;
-                        const isDemoData = visits.data.length === 0;
+                        // Synthetic "Customer created" entries — one per customer ID
+                        const creatorName = row.stage3.agent !== "—" ? row.stage3.agent : (row.lead?.created_by?.split("@")[0] || "kam");
+                        const customerVisits: ActivityLog[] = (row.customerIds || []).map((cid, i) => ({
+                          id: `cust-${row.prospect.id}-${cid}`,
+                          timestamp: new Date(
+                            (row.customerCreatedAt ? new Date(row.customerCreatedAt).getTime() : Date.now())
+                            + i * 60 * 60 * 1000
+                          ).toISOString(),
+                          entity_id: row.prospect.id,
+                          entity_type: "customer",
+                          action: "customer created",
+                          user_email: `${creatorName}@company.com`,
+                          user_role: "kam",
+                          notes: `Customer ID: ${cid}, Customer Name: ${row.prospect.restaurant_name}, CreatedBy: ${creatorName}`,
+                          before_state: null,
+                          after_state: null,
+                        }));
+                        const realData = visits.data as ActivityLog[];
+                        const combined = [...customerVisits, ...realData];
+                        const logsToShow: ActivityLog[] = combined.length > 0 ? combined : DEMO_VISIT_EXAMPLES;
+                        const isDemoData = combined.length === 0;
                         return (
                           <div className="space-y-0 divide-y divide-border rounded-md border overflow-hidden">
                             {isDemoData && (
