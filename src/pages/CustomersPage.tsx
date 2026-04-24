@@ -854,12 +854,20 @@ function CustomerCardsMobile({
       {customers.map(c => (
         <Card key={c.entityId} className="overflow-hidden">
           <CardContent className="p-0">
-            <div className="flex items-start justify-between px-4 pt-3 pb-2 border-b bg-muted/30">
-              <div>
-                <p className="font-semibold text-sm leading-tight">{c.customerName}</p>
-                <p className="text-xs text-muted-foreground font-mono mt-0.5">{c.entityId}</p>
+            <div className="px-4 pt-3 pb-2 border-b bg-muted/30">
+              <p className="font-semibold text-sm leading-tight">{c.customerName}</p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs">
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-muted-foreground">Entity ID:</span>
+                  <span className="font-mono font-medium">{c.entityId}</span>
+                </span>
+                {c.customerId && (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="text-muted-foreground">Customer ID:</span>
+                    <span className="font-mono font-medium">{c.customerId}</span>
+                  </span>
+                )}
               </div>
-              {c.customerId && <p className="text-xs font-mono text-muted-foreground">{c.customerId}</p>}
             </div>
 
             <div className="px-4 py-3 space-y-2">
