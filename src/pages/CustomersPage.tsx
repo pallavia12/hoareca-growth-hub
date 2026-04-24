@@ -1043,16 +1043,82 @@ export default function CustomersPage() {
     });
   }, [agreements, orders, leads, partners, currentUserEmail]);
 
+  // Demo: 3 sample Active Customers (current week deliveries) so Log Visit is accessible to any logged-in user
+  const demoActiveCustomers = useMemo<Customer[]>(() => {
+    const today = new Date();
+    const monday = getMonday(today);
+    const mkIso = (offset: number) =>
+      isoDate(new Date(monday.getTime() + offset * 86400000));
+
+    const make = (
+      idx: number,
+      name: string,
+      locality: string,
+      pincode: string,
+      address: string,
+      pm: string,
+      contact: string,
+      orderDays: { dayOffset: number; kg: number }[],
+      weeklyKg: number,
+      price: number,
+      dp: string,
+    ): Customer => {
+      const sortedAsc = [...orderDays].sort((a, b) => a.dayOffset - b.dayOffset);
+      const last = sortedAsc[sortedAsc.length - 1];
+      return {
+        entityId: `DEMO${idx.toString().padStart(4, "0")}`,
+        customerId: `78${(100 + idx).toString()}`,
+        customerName: name,
+        bpName: "Ninjacart BP",
+        bpId: `BP${idx}`,
+        dpName: dp,
+        dpId: `DP${idx}`,
+        agreementDate: mkIso(-7),
+        agreedPrice: price,
+        weeklyDemandKg: weeklyKg,
+        expectedFirstOrderDate: mkIso(-6),
+        lastDeliveryDate: mkIso(last.dayOffset),
+        lastDeliveryKg: last.kg,
+        kam: currentUserEmail || "demo@ninjacart.com",
+        locality,
+        localityId: pincode,
+        address,
+        pmContact: `${pm} • ${contact}`,
+        orderHistory: sortedAsc.map(o => ({ date: mkIso(o.dayOffset), kg: o.kg })),
+      };
+    };
+
+    return [
+      make(1, "Truffles Cafe", "Koramangala", "560034",
+        "80 Feet Rd, 4th Block, Koramangala", "Rakesh Kumar", "+91 98450 12345",
+        [{ dayOffset: 0, kg: 8 }, { dayOffset: 2, kg: 6 }, { dayOffset: 4, kg: 7 }],
+        21, 480, "FreshHub Logistics"),
+      make(2, "Toast & Tonic", "Indiranagar", "560038",
+        "100 Feet Rd, Indiranagar", "Anjali Mehta", "+91 99860 22112",
+        [{ dayOffset: 1, kg: 5 }, { dayOffset: 3, kg: 6 }],
+        14, 510, "GreenLeaf Distributors"),
+      make(3, "The Avocado Bar", "HSR Layout", "560102",
+        "27th Main, HSR Layout Sector 2", "Vikram Shetty", "+91 90080 33445",
+        [{ dayOffset: 0, kg: 10 }, { dayOffset: 2, kg: 8 }, { dayOffset: 5, kg: 9 }],
+        30, 465, "FreshHub Logistics"),
+    ];
+  }, [currentUserEmail]);
+
+  const allCustomersWithDemo = useMemo(
+    () => [...demoActiveCustomers, ...allCustomers],
+    [demoActiveCustomers, allCustomers]
+  );
+
   // Derive filter options
   const localityOptions = useMemo(() => {
-    const set = new Set(allCustomers.map(c => c.locality).filter(l => l !== "—"));
+    const set = new Set(allCustomersWithDemo.map(c => c.locality).filter(l => l !== "—"));
     return Array.from(set).sort();
-  }, [allCustomers]);
+  }, [allCustomersWithDemo]);
 
   const agentOptions = useMemo(() => {
-    const set = new Set(allCustomers.map(c => c.kam).filter(Boolean));
+    const set = new Set(allCustomersWithDemo.map(c => c.kam).filter(Boolean));
     return Array.from(set).sort();
-  }, [allCustomers]);
+  }, [allCustomersWithDemo]);
 
   const effectiveKamOptions = kamOptions.length > 0 ? kamOptions : KAM_OPTIONS_FALLBACK;
 
@@ -1080,23 +1146,23 @@ export default function CustomersPage() {
   const sundayIso = isoDate(sunday);
 
   const onboardPending = useMemo(() =>
-    allCustomers.filter(c => c.customerId === null && c.lastDeliveryDate === null),
-    [allCustomers]);
+    allCustomersWithDemo.filter(c => c.customerId === null && c.lastDeliveryDate === null),
+    [allCustomersWithDemo]);
 
   const notOrdered = useMemo(() =>
-    allCustomers.filter(c => {
+    allCustomersWithDemo.filter(c => {
       if (c.customerId === null && c.lastDeliveryDate === null) return false; // onboard pending
       if (!c.lastDeliveryDate) return true; // has customerId but no delivery
       return c.lastDeliveryDate < mondayIso || c.lastDeliveryDate > sundayIso;
     }),
-    [allCustomers, mondayIso, sundayIso]);
+    [allCustomersWithDemo, mondayIso, sundayIso]);
 
   const active = useMemo(() =>
-    allCustomers.filter(c => {
+    allCustomersWithDemo.filter(c => {
       if (c.customerId === null && c.lastDeliveryDate === null) return false;
       return c.lastDeliveryDate && c.lastDeliveryDate >= mondayIso && c.lastDeliveryDate <= sundayIso;
     }),
-    [allCustomers, mondayIso, sundayIso]);
+    [allCustomersWithDemo, mondayIso, sundayIso]);
 
   const onboardFiltered = filter(onboardPending);
   const notOrderedFiltered = filter(notOrdered);
