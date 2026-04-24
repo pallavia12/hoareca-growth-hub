@@ -1111,14 +1111,14 @@ export default function CustomersPage() {
 
   // Derive filter options
   const localityOptions = useMemo(() => {
-    const set = new Set(allCustomers.map(c => c.locality).filter(l => l !== "—"));
+    const set = new Set(allCustomersWithDemo.map(c => c.locality).filter(l => l !== "—"));
     return Array.from(set).sort();
-  }, [allCustomers]);
+  }, [allCustomersWithDemo]);
 
   const agentOptions = useMemo(() => {
-    const set = new Set(allCustomers.map(c => c.kam).filter(Boolean));
+    const set = new Set(allCustomersWithDemo.map(c => c.kam).filter(Boolean));
     return Array.from(set).sort();
-  }, [allCustomers]);
+  }, [allCustomersWithDemo]);
 
   const effectiveKamOptions = kamOptions.length > 0 ? kamOptions : KAM_OPTIONS_FALLBACK;
 
@@ -1146,23 +1146,23 @@ export default function CustomersPage() {
   const sundayIso = isoDate(sunday);
 
   const onboardPending = useMemo(() =>
-    allCustomers.filter(c => c.customerId === null && c.lastDeliveryDate === null),
-    [allCustomers]);
+    allCustomersWithDemo.filter(c => c.customerId === null && c.lastDeliveryDate === null),
+    [allCustomersWithDemo]);
 
   const notOrdered = useMemo(() =>
-    allCustomers.filter(c => {
+    allCustomersWithDemo.filter(c => {
       if (c.customerId === null && c.lastDeliveryDate === null) return false; // onboard pending
       if (!c.lastDeliveryDate) return true; // has customerId but no delivery
       return c.lastDeliveryDate < mondayIso || c.lastDeliveryDate > sundayIso;
     }),
-    [allCustomers, mondayIso, sundayIso]);
+    [allCustomersWithDemo, mondayIso, sundayIso]);
 
   const active = useMemo(() =>
-    allCustomers.filter(c => {
+    allCustomersWithDemo.filter(c => {
       if (c.customerId === null && c.lastDeliveryDate === null) return false;
       return c.lastDeliveryDate && c.lastDeliveryDate >= mondayIso && c.lastDeliveryDate <= sundayIso;
     }),
-    [allCustomers, mondayIso, sundayIso]);
+    [allCustomersWithDemo, mondayIso, sundayIso]);
 
   const onboardFiltered = filter(onboardPending);
   const notOrderedFiltered = filter(notOrdered);
